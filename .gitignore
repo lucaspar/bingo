@@ -1,3 +1,6 @@
+# dotenv
+.env
+
 # aws keys
 .aws/
 
