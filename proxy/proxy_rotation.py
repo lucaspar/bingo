@@ -15,29 +15,29 @@ Useful proxy list websites
 
 """
 
-from urllib.request import Request, urlopen
-from bs4 import BeautifulSoup
-from fake_useragent import UserAgent
-import random
-from multiprocessing.pool import ThreadPool
-from time import time as timer
-from urllib.request import urlopen
-import threading
 import time
+import random
+import threading
+from bs4 import BeautifulSoup
+from time import time as timer
+from fake_useragent import UserAgent
+from urllib.request import Request, urlopen
+from multiprocessing.pool import ThreadPool
 
 ###############################################
 # Define some parameters
 ###############################################
 # Proxies from these countries will be allowed
-country_list = ['United States', 'United Kingdom', 'Belarus',
+COUNTRY_LIST = ['United States', 'United Kingdom', 'Belarus',
                 'Czech Republic', 'Spain', 'Brazil', 'France',
                 'Canada', 'Poland', 'Armenia', 'Ukraine', 'France',
                 'Mexico', 'Georgia', 'Hungary']
-proxy_websites = ['https://www.sslproxies.org/']
-nb_thread = 2
-nb_requests = 4
-step_random_proxy = 2
-target_url = 'http://icanhazip.com'
+PROXY_WEBSITES = ['https://www.sslproxies.org/']
+TARGET_URL = 'http://icanhazip.com'
+STEP_RANDOM_PROXY = 2
+NB_REQUESTS = 4
+NB_THREAD = 14
+CALL_TIMEOUT = 8
 
 ###############################################
 # Define the functions
@@ -59,14 +59,13 @@ def retrieve_proxy_ips(proxy_website_list):
 
         proxies_req = Request(proxy_website)
         proxies_req.add_header('User-Agent', user_agent.random)
-        proxies_doc = urlopen(proxies_req).read().decode('utf8')
+        proxies_doc = urlopen(proxies_req, timeout=CALL_TIMEOUT).read().decode('utf8')
 
         soup = BeautifulSoup(proxies_doc, 'html.parser')
         proxies_table = soup.find(id='proxylisttable')
 
         if (proxy_website == 'https://www.sslproxies.org/'):
             # Find the proxies and feature in this website
-            print("[INFO] Start retrieving proxies from https://www.sslproxies.org/")
             for row in proxies_table.tbody.find_all('tr'):
                 proxies_no_filter.append({
                     'ip': row.find_all('td')[0].string,
@@ -78,13 +77,14 @@ def retrieve_proxy_ips(proxy_website_list):
 
 
     # Filter the whole list and only get those satisfy our conditions
-    print("[INFO] Filtering the proxy list...")
-
     for proxy_ip in proxies_no_filter:
-        if (proxy_ip['country'] in country_list) and (proxy_ip['https'] == 'yes'):
+        if (proxy_ip['country'] in COUNTRY_LIST) and (proxy_ip['https'] == 'yes'):
             proxies.append(proxy_ip)
         else:
             pass
+
+    # Print the number of proxies we have and return
+    print("Total %d proxies found" % len(proxies))
 
     return proxies
 
@@ -93,13 +93,13 @@ def random_proxy(proxies):
     :param proxies: A proxy list
     :return: Random index for a proxy
     """
-    return random.randint(0, len(proxies) - 1)
+    return random.choice(range(len(proxies)))
 
 
 def test_single_process_proxy(proxies,
-                            nb_request=nb_requests,
-                            test_url=target_url ,
-                            step_for_random_proxy=step_random_proxy):
+                            nb_request=NB_REQUESTS,
+                            test_url=TARGET_URL ,
+                            step_for_random_proxy=STEP_RANDOM_PROXY):
     """
     Testing the proxies in the filtered list
     based on a random choice using a single process.
@@ -126,34 +126,33 @@ def test_single_process_proxy(proxies,
         # Every certain number of requests, generate a new proxy
         if n % step_for_random_proxy == 0:
             proxy_index = random_proxy(proxies)
-            proxy = proxies[proxy_index]
+            proxy = proxies[random_proxy(proxies)]
             req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
         else:
             pass
 
         # Intercept broken proxies and delete them from the list and notice the user
         try:
-            my_ip = urlopen(req).read().decode('utf8')
+            my_ip = urlopen(req, timeout=CALL_TIMEOUT).read().decode('utf8')
             print('#' + str(n) + ': ' + my_ip)
             # result.append(True)
 
         except:  # If error, delete this proxy and find another one
             del proxies[proxy_index]
             print('Proxy ' + proxy['ip'] + ':' + proxy['port'] + ' is deleted.')
-            proxy_index = random_proxy(proxies)
-            proxy = proxies[proxy_index]
+            proxy = proxies[random_proxy(proxies)]
             # req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
             # result.append(False)
 
     # return result
 
-def test_multi_process_proxy(proxies,
-                            nb_request=nb_requests,
-                            test_url=target_url ,
-                            step_for_random_proxy=step_random_proxy):
+def test_multi_process_proxy(proxy,
+                            nb_request=NB_REQUESTS,
+                            test_url=TARGET_URL ,
+                            step_for_random_proxy=STEP_RANDOM_PROXY):
     """
     Testing the proxies in the filtered list
-    based on a random choice using a single process.
+    based on a random choice using multi-process.
 
     :param
         proxy: The list of filtered proxies
@@ -164,48 +163,46 @@ def test_multi_process_proxy(proxies,
     :return:
         result: True if the proxy works, False if it does not work
     """
-    print(proxies)
-
+    # print(threading.get_ident(), id(proxies))
     result = []
-
-    proxy_index = random_proxy(proxies)
-    proxy = proxies[proxy_index]
 
     # Proxy rotation
     for n in range(1, nb_request + 1):
         req = Request(test_url)
         req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
 
-        # Every certain number of requests, generate a new proxy
-        if n % step_for_random_proxy == 0:
-            proxy_index = random_proxy(proxies)
-            proxy = proxies[proxy_index]
-            req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
-        else:
-            pass
+        # # Every certain number of requests, generate a new proxy
+        # if n % step_for_random_proxy == 0:
+        #     proxy_index = random_proxy(proxies)
+        #     proxy = proxies[proxy_index]
+        #     req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
+        # else:
+        #     pass
 
         # Intercept broken proxies and delete them from the list and notice the user
         try:
-            my_ip = urlopen(req).read().decode('utf8')
-            print('#' + str(n) + ': ' + my_ip)
+            my_ip = (urlopen(req, timeout=CALL_TIMEOUT).read().decode('utf8')).replace('\n','')
+            print('#', n, '-', my_ip, '==',  proxy['ip'])
             result.append(True)
 
-        except:  # If error, delete this proxy and find another one
-            del proxies[proxy_index]
-            print('Proxy ' + proxy['ip'] + ':' + proxy['port'] + ' is deleted.')
-            proxy_index = random_proxy(proxies)
-            proxy = proxies[proxy_index]
-            # req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
+        except Exception as err:  # If error, delete this proxy and find another one
+            # del proxies[proxy_index]
+            print("Exception:", err)
+            # print('Proxy ' + proxy['ip'] + ':' + proxy['port'] + ' is deleted.')
+            # proxy_index = random_proxy(proxies)
+            # proxy = proxies[proxy_index]
+            # # req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
             result.append(False)
 
     return result
+
 
 ###############################################
 # Main function
 ###############################################
 if __name__ == '__main__':
     # 1. Get the proxy list from the websites.
-    proxy_list = retrieve_proxy_ips(proxy_website_list=proxy_websites)
+    proxy_list = retrieve_proxy_ips(proxy_website_list=PROXY_WEBSITES)
     print("[INFO] Found %d proxies" % len(proxy_list))
 
     # Test single process first
@@ -222,10 +219,10 @@ if __name__ == '__main__':
     """
 
     # # 2. Test the proxies with multi-process
-    results = ThreadPool(nb_thread).imap_unordered(test_multi_process_proxy,
-                                                   proxy_list)
+    print("THREADS ", NB_THREAD)
+    pool = ThreadPool(NB_THREAD)
+    results = pool.imap_unordered(test_multi_process_proxy, proxy_list)
 
     # 4. Get the result
     for status in results:
         print(status)
-
