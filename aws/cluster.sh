@@ -6,4 +6,4 @@ eksctl create cluster \
     --nodes-min 1 \
     --nodes-max 4 \
     --node-ami auto \
-    --name bingo-nano-003 \
+    --name bingo-nano-002 \
