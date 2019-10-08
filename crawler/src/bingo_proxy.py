@@ -25,23 +25,35 @@ from multiprocessing.pool import ThreadPool
 # Define some parameters
 ###############################################
 # Proxies from these countries will be allowed
-COUNTRY_LIST = ['United States', 'United Kingdom', 'Belarus',
-                'Czech Republic', 'Spain', 'Brazil', 'France',
-                'Canada', 'Poland', 'Armenia', 'Ukraine', 'France',
-                'Mexico', 'Georgia', 'Hungary']
-PROXY_WEBSITES = ['https://www.sslproxies.org/']
-TARGET_URL = 'http://icanhazip.com'
-STEP_RANDOM_PROXY = 2
-NB_REQUESTS = 4
-NB_THREAD = 14
-CALL_TIMEOUT = 8
+# COUNTRY_LIST = ['United States', 'United Kingdom', 'Belarus',
+#                 'Czech Republic', 'Spain', 'Brazil', 'France',
+#                 'Canada', 'Poland', 'Armenia', 'Ukraine', 'France',
+#                 'Mexico', 'Georgia', 'Hungary']
+# PROXY_WEBSITES = ['https://www.sslproxies.org/']
+# TARGET_URL = 'http://icanhazip.com'
+# STEP_RANDOM_PROXY = 2
+# NB_REQUESTS = 4
+# NB_THREAD = 14
+# CALL_TIMEOUT = 8
 test_single = False
 
 ###############################################
 # Define the class
 ###############################################
 class  bingo_proxy(object):
-    def retrieve_proxy_ips(self, proxy_website_list):
+    def __init__(self):
+        self.COUNTRY_LIST = ['United States', 'United Kingdom', 'Belarus',
+                        'Czech Republic', 'Spain', 'Brazil', 'France',
+                        'Canada', 'Poland', 'Armenia', 'Ukraine', 'France',
+                        'Mexico', 'Georgia', 'Hungary']
+        self.PROXY_WEBSITES = ['https://www.sslproxies.org/']
+        self.TARGET_URL = 'http://icanhazip.com'
+        self.STEP_RANDOM_PROXY = 2
+        self.NB_REQUESTS = 4
+        self.NB_THREAD = 14
+        self.CALL_TIMEOUT = 8
+
+    def retrieve_proxy_ips(self):
         """
         Retrieve the proxy lists from multiple websites.
 
@@ -51,14 +63,14 @@ class  bingo_proxy(object):
             list: a list of available proxies
         """
 
-        for proxy_website in proxy_website_list:
+        for proxy_website in self.PROXY_WEBSITES:
             user_agent = UserAgent()
             proxies_no_filter = []
             proxies = []
 
             proxies_req = Request(proxy_website)
             proxies_req.add_header('User-Agent', user_agent.random)
-            proxies_doc = urlopen(proxies_req, timeout=CALL_TIMEOUT).read().decode('utf8')
+            proxies_doc = urlopen(proxies_req, timeout=self.CALL_TIMEOUT).read().decode('utf8')
 
             soup = BeautifulSoup(proxies_doc, 'html.parser')
             proxies_table = soup.find(id='proxylisttable')
@@ -77,7 +89,7 @@ class  bingo_proxy(object):
 
         # Filter the whole list and only get those satisfy our conditions
         for proxy_ip in proxies_no_filter:
-            if (proxy_ip['country'] in COUNTRY_LIST) and (proxy_ip['https'] == 'yes'):
+            if (proxy_ip['country'] in self.COUNTRY_LIST) and (proxy_ip['https'] == 'yes'):
                 proxies.append(proxy_ip)
             else:
                 pass
@@ -95,10 +107,7 @@ class  bingo_proxy(object):
         return random.choice(range(len(proxies)))
 
 
-    def test_single_process_proxy(self, proxies,
-                                nb_request=NB_REQUESTS,
-                                test_url=TARGET_URL ,
-                                step_for_random_proxy=STEP_RANDOM_PROXY):
+    def test_single_process_proxy(self, proxies):
         """
         Testing the proxies in the filtered list
         based on a random choice using a single process.
@@ -118,12 +127,12 @@ class  bingo_proxy(object):
         proxy = proxies[proxy_index]
 
         # Proxy rotation
-        for n in range(1, nb_request + 1):
-            req = Request(test_url)
+        for n in range(1, self.NB_REQUESTS + 1):
+            req = Request(self.TARGET_URL)
             req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
 
             # Every certain number of requests, generate a new proxy
-            if n % step_for_random_proxy == 0:
+            if n % self.STEP_RANDOM_PROXY == 0:
                 proxy_index = self.random_proxy(proxies)
                 proxy = proxies[self.random_proxy(proxies)]
                 req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
@@ -132,7 +141,7 @@ class  bingo_proxy(object):
 
             # Intercept broken proxies and delete them from the list and notice the user
             try:
-                my_ip = urlopen(req, timeout=CALL_TIMEOUT).read().decode('utf8')
+                my_ip = urlopen(req, timeout=self.CALL_TIMEOUT).read().decode('utf8')
                 print('#' + str(n) + ': ' + my_ip)
                 # result.append(True)
 
@@ -140,15 +149,8 @@ class  bingo_proxy(object):
                 del proxies[proxy_index]
                 print('Proxy ' + proxy['ip'] + ':' + proxy['port'] + ' is deleted.')
                 proxy = proxies[self.random_proxy(proxies)]
-                # req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
-                # result.append(False)
 
-        # return result
-
-    def test_multi_process_proxy(self, proxy,
-                                nb_request=NB_REQUESTS,
-                                test_url=TARGET_URL ,
-                                step_for_random_proxy=STEP_RANDOM_PROXY):
+    def test_multi_process_proxy(self, proxy):
         """
         Testing the proxies in the filtered list
         based on a random choice using multi-process.
@@ -166,13 +168,13 @@ class  bingo_proxy(object):
         result = []
 
         # Proxy rotation
-        for n in range(1, nb_request + 1):
-            req = Request(test_url)
+        for n in range(1, self.NB_REQUESTS + 1):
+            req = Request(self.TARGET_URL)
             req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
 
             # Intercept broken proxies and delete them from the list and notice the user
             try:
-                my_ip = (urlopen(req, timeout=CALL_TIMEOUT).read().decode('utf8')).replace('\n','')
+                my_ip = (urlopen(req, timeout=self.CALL_TIMEOUT).read().decode('utf8')).replace('\n','')
                 print('#', n, '-', my_ip, '==',  proxy['ip'])
                 result.append(True)
 
@@ -184,13 +186,14 @@ class  bingo_proxy(object):
 
 
 ###############################################
-# Main function
+# Main function (Example for using the class)
 ###############################################
 if __name__ == '__main__':
     # 0. Creat an object using the class
     bingo = bingo_proxy()
+
     # 1. Get the proxy list from the websites.
-    proxy_list = bingo.retrieve_proxy_ips(proxy_website_list=PROXY_WEBSITES)
+    proxy_list = bingo.retrieve_proxy_ips()
     print("[INFO] Found %d proxies" % len(proxy_list))
 
     # Test single process first
@@ -198,8 +201,8 @@ if __name__ == '__main__':
         bingo.test_single_process_proxy(proxies=proxy_list)
 
     # # 2. Test the proxies with multi-process
-    print("THREADS ", NB_THREAD)
-    pool = ThreadPool(NB_THREAD)
+    print("THREADS ", bingo.NB_THREAD)
+    pool = ThreadPool(bingo.NB_THREAD)
     results = pool.imap_unordered(bingo.test_multi_process_proxy, proxy_list)
 
     # 4. Get the result
