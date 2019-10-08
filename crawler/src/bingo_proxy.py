@@ -170,27 +170,14 @@ class  bingo_proxy(object):
             req = Request(test_url)
             req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
 
-            # # Every certain number of requests, generate a new proxy
-            # if n % step_for_random_proxy == 0:
-            #     proxy_index = random_proxy(proxies)
-            #     proxy = proxies[proxy_index]
-            #     req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
-            # else:
-            #     pass
-
             # Intercept broken proxies and delete them from the list and notice the user
             try:
                 my_ip = (urlopen(req, timeout=CALL_TIMEOUT).read().decode('utf8')).replace('\n','')
                 print('#', n, '-', my_ip, '==',  proxy['ip'])
                 result.append(True)
 
-            except Exception as err:  # If error, delete this proxy and find another one
-                # del proxies[proxy_index]
+            except Exception as err:
                 print("Exception:", err)
-                # print('Proxy ' + proxy['ip'] + ':' + proxy['port'] + ' is deleted.')
-                # proxy_index = random_proxy(proxies)
-                # proxy = proxies[proxy_index]
-                # # req.set_proxy(proxy['ip'] + ':' + proxy['port'], 'http')
                 result.append(False)
 
         return result
