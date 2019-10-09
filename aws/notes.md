@@ -1,5 +1,9 @@
 # Notes on k8s deploy
 
+## `kubectl` Cheat Sheet
+
+https://kubernetes.io/docs/reference/kubectl/cheatsheet/
+
 ## Step-by-Step
 
 http://docs.shippable.com/deploy/tutorial/create-kubeconfig-for-self-hosted-kubernetes-cluster/
