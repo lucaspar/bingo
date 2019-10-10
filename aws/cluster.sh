@@ -54,5 +54,8 @@ kubectl get pvc
 # delete all kubectl resources
 kubectl delete daemonsets,replicasets,services,deployments,pods,rc --all
 
-# delete all persistent volumes, volume claims, and storage classes
-kubectl delete pv,pvc,sc --all
+# delete all persistent data: stateful sets, volumes, volume claims, and storage classes
+kubectl delete statefulsets,pv,pvc,sc --all
+
+# DELETE EVERYTHING (incl. persistent data!)
+kubectl delete daemonsets,replicasets,services,deployments,pods,rc,sc,pv,pvc,statefulsets --all
