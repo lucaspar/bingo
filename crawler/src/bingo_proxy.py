@@ -20,21 +20,15 @@ from time import time as timer
 from fake_useragent import UserAgent
 from urllib.request import Request, urlopen
 from multiprocessing.pool import ThreadPool
+import os
 
 ###############################################
 # Define some parameters
 ###############################################
-# Proxies from these countries will be allowed
-# COUNTRY_LIST = ['United States', 'United Kingdom', 'Belarus',
-#                 'Czech Republic', 'Spain', 'Brazil', 'France',
-#                 'Canada', 'Poland', 'Armenia', 'Ukraine', 'France',
-#                 'Mexico', 'Georgia', 'Hungary']
-# PROXY_WEBSITES = ['https://www.sslproxies.org/']
-# TARGET_URL = 'http://icanhazip.com'
-# STEP_RANDOM_PROXY = 2
-# NB_REQUESTS = 4
-# NB_THREAD = 14
-# CALL_TIMEOUT = 8
+# load the dotenv file
+from dotenv import load_dotenv
+load_dotenv(dotenv_path='../.env')
+
 test_single = False
 
 ###############################################
@@ -48,10 +42,11 @@ class  bingo_proxy(object):
                         'Mexico', 'Georgia', 'Hungary']
         self.PROXY_WEBSITES = ['https://www.sslproxies.org/']
         self.TARGET_URL = 'http://icanhazip.com'
-        self.STEP_RANDOM_PROXY = 2
-        self.NB_REQUESTS = 4
-        self.NB_THREAD = 14
-        self.CALL_TIMEOUT = 8
+
+        self.STEP_RANDOM_PROXY = int(os.getenv("STEP_RANDOM_PROXY"))
+        self.NB_REQUESTS = int(os.getenv("NB_REQUESTS"))
+        self.NB_THREAD = int(os.getenv("NB_THREAD"))
+        self.CALL_TIMEOUT = int(os.getenv("CALL_TIMEOUT"))
 
     def retrieve_proxy_ips(self):
         """
