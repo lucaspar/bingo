@@ -15,4 +15,4 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/examples/master/gu
 kubectl get services -o wide
 
 # cleanup:
-kubectl delete rc/redis-master rc/redis-slave rc/guestbook svc/redis-master svc/redis-slave svc/guestbook
+# kubectl delete rc/redis-master rc/redis-slave rc/guestbook svc/redis-master svc/redis-slave svc/guestbook
