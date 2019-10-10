@@ -1,8 +1,41 @@
+# Author: Sophia Abraham 
+
+'''
+need to configure with aws credentials for this to work 
+terminal commands : 
+- sudo apt install awscli 
+- aws configure 
+    > AWS ACCESS KEY 
+    > AWS SECRET KEY 
+    > DEFAULT REGION : us-east-1 
+    > OUTPUT : None 
+'''
+
 import re
 import requests
 from bs4 import BeautifulSoup
 from collections import deque
 from urllib.parse import urlsplit, urljoin
+import socket
+import boto3 
+import json 
+
+'''
+# Sophia - In case we want to remove configuring from the terminal  
+AWS_SERVER_PUBLIC_KEY = 'AKIAYPX2GXWYT3BV57BF'
+AWS_SERVER_SECRET_KEY = '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'
+
+# Sophia - create a session: 
+
+session = boto3.Session(
+    aws_access_key_id= AWS_SERVER_PUBLIC_KEY, 
+    aws_secret_access_key= AWS_SERVER_SECRET_KEY,
+)
+ 
+# s3 = session.resource('s3')
+'''
+
+bucket_name = 'bingo-crawling'
 
 url = "https://en.wikipedia.org/wiki/Main_Page"
 new_urls = deque([url])
@@ -10,6 +43,24 @@ processed_urls = set()
 foreign_urls = set()
 broken_urls = set()
 local_urls = set()
+
+# Sophia : Code establish communication between client and server to request and send URLS
+# PORT = 23456
+# HOSTNAME = '127.0.0.1'
+
+# sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# server_address = (HOSTNAME, PORT)
+# sock.bind(server_address)
+
+# with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock: 
+#     sock.connect((HOST, PORT))
+#     sock.sendall()
+
+# Function to save to S3 
+def save_files_to_s3(bucket, file_name, data): 
+    s3 = boto3.resource('s3')
+    obj = s3.Object(bucket, file_name)
+    obj.put(Body=json.dumps(data))
 
 # TODO: submit found URLs to balancer; request new URLs from it.
 while len(new_urls):
@@ -23,7 +74,9 @@ while len(new_urls):
     try:
         response = requests.get(url)
         soup = BeautifulSoup(response.text, "lxml")
+        print(type(soup))
         # TODO: save fetched document to S3
+        save_files_to_s3(bucket_name, soup.title.string, str(soup))
     except(requests.exceptions.MissingSchema,
            requests.exceptions.ConnectionError,
            requests.exceptions.InvalidURL,
