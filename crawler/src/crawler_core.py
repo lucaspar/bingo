@@ -16,6 +16,7 @@ import requests
 from bs4 import BeautifulSoup
 from collections import deque
 from urllib.parse import urlsplit, urljoin
+from bingo_proxy import bingo_proxy 
 import socket
 import boto3 
 import json 
@@ -44,6 +45,10 @@ foreign_urls = set()
 broken_urls = set()
 local_urls = set()
 
+bingo = bingo_proxy()
+proxy_list = bingo.retrieve_proxy_ips()
+random = bingo.random_proxy(proxy_list) 
+proxy = proxy_list[random]
 # Sophia : Code establish communication between client and server to request and send URLS
 # PORT = 23456
 # HOSTNAME = '127.0.0.1'
@@ -55,6 +60,8 @@ local_urls = set()
 # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock: 
 #     sock.connect((HOST, PORT))
 #     sock.sendall()
+
+
 
 # Function to save to S3 
 def save_files_to_s3(bucket, file_name, data): 
@@ -72,10 +79,12 @@ while len(new_urls):
 
     # make request
     try:
-        response = requests.get(url)
+        # TODO: rotating the proxies? 
+        response = requests.get(url, proxies = {"https" : proxy['ip'] + ':' + proxy['port'] , "http": proxy['ip'] + ':' + proxy['port'] })
         soup = BeautifulSoup(response.text, "lxml")
         print(type(soup))
-        # TODO: save fetched document to S3
+        print(proxy)
+        print(response)
         save_files_to_s3(bucket_name, soup.title.string, str(soup))
     except(requests.exceptions.MissingSchema,
            requests.exceptions.ConnectionError,
