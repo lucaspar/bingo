@@ -10,6 +10,7 @@ Useful proxy list websites
 
 """
 
+import os
 import time
 import random
 import urllib3
@@ -59,6 +60,10 @@ class BingoProxy(object):
 
     def request(self, url_list):
 
+        # create a list if it is a single url
+        if not isinstance(url_list, list):
+            url_list = [url_list]
+
         # randomly select proxies from list
         proxy_selection = random.choices(self.proxy_list, k=len(url_list))
         req_list = list(zip(url_list, proxy_selection))
@@ -83,7 +88,7 @@ class BingoProxy(object):
         # make concurrent requests
         pool = ThreadPool(self._NB_THREAD)
         results = pool.imap_unordered(self.make_proxy_request, req_list)
-        print('done')
+
         return results
 
 
@@ -254,7 +259,6 @@ class BingoProxy(object):
 if __name__ == '__main__':
 
     # load environment variables
-    import os
     from dotenv import load_dotenv
     load_dotenv(dotenv_path='../.env')
     concurrency = int(os.getenv("CR_REQUESTS_CONCURRENCY", default=1))
