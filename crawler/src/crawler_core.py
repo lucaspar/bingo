@@ -11,6 +11,9 @@ import json
 import re
 import os
 import hashlib
+import urllib.robotparser
+from urllib.parse import urlparse
+
 
 # Sophia : Code establish communication between client and server to request and send URLS
 # PORT = 23456
@@ -42,6 +45,13 @@ def store_in_s3(bucket, file_name, data):
     return bool(res)
 
 
+def get_robots_txt_url(url):
+    # https://stackoverflow.com/questions/9626535/get-protocol-host-name-from-url
+    parsed_uri = urlparse(url)
+    robots_url = '{uri.scheme}://{uri.netloc}/robots.txt'.format(uri=parsed_uri)
+    return robots_url
+
+
 if __name__ == "__main__":
 
     url_list = ['https://en.wikipedia.org/wiki/Main_Page', 'https://www.yahoo.com/', 'https://cnn.com']
@@ -50,6 +60,9 @@ if __name__ == "__main__":
     foreign_urls = set()
     broken_urls = set()
     local_urls = set()
+    rp = urllib.robotparser.RobotFileParser()
+    # Trick rp library - fake an access to robots.txt from their POV
+    rp.last_checked = True
 
     # load environment variables
     load_dotenv(dotenv_path='../.env')
@@ -69,8 +82,25 @@ if __name__ == "__main__":
         # setup proxy and make request
         try:
             bp = BingoProxy(concurrency=concurrency, timeout=timeout)
-            responses = bp.request(url)
-            response = responses.next()
+            
+            # Czech if can crawl
+            try:
+                robots_url = get_robots_txt_url(url)
+                response = bp.request(robots_url).next()
+                rp.parse(response.text)
+                if not rp.can_fetch('*', url):
+                    continue  # Cannot fetch
+                # Otherwise can fetch
+            except requests.exceptions.HTTPError as err:
+                # https://github.com/python/cpython/blob/3.7/Lib/urllib/robotparser.py
+                if err.code in (401, 403):
+                    continue  # Cannot fetch
+                elif err.code >= 400 and err.code < 500:
+                    pass  # Can fetch
+                else:
+                    continue  # Cannot fetch
+            
+            response = bp.request(url).next()
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "lxml")
             # Hash the URL using SHA1 algorithm, use as file name
