@@ -4,6 +4,8 @@
 # aws keys
 .aws/
 
+.vscode/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
