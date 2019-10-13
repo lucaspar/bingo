@@ -10,6 +10,7 @@ import boto3
 import json
 import re
 import os
+import hashlib
 
 # Sophia : Code establish communication between client and server to request and send URLS
 # PORT = 23456
@@ -72,9 +73,9 @@ if __name__ == "__main__":
             response = responses.next()
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "lxml")
-            # TODO: compute the URL hash and use it as the
-            #       file name instead of `soup.title.string`:
-            store_in_s3(bucket_name, soup.title.string, str(soup))
+            # Hash the URL using SHA1 algorithm, use as file name
+            url_hash = hashlib.sha1(url.encode()).hexdigest()
+            store_in_s3(bucket_name, url_hash, str(soup))
 
         # catch http request errors
         except requests.exceptions.HTTPError as err:
