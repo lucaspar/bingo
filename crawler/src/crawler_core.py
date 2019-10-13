@@ -13,6 +13,7 @@ import os
 import hashlib
 import urllib.robotparser
 from urllib.parse import urlparse
+import time 
 
 
 # Sophia : Code establish communication between client and server to request and send URLS
@@ -44,6 +45,12 @@ def store_in_s3(bucket, file_name, data):
     # access more info with res['ResponseMetadata']
     return bool(res)
 
+def make_dict(url, err): 
+    return {
+        'url': url, 
+        'status': err, 
+        'timestamp': time.time(),
+    }
 
 def get_robots_txt_url(url):
     # https://stackoverflow.com/questions/9626535/get-protocol-host-name-from-url
@@ -60,6 +67,7 @@ if __name__ == "__main__":
     foreign_urls = set()
     broken_urls = set()
     local_urls = set()
+    balancer_metadata = []
     rp = urllib.robotparser.RobotFileParser()
     # Trick rp library - fake an access to robots.txt from their POV
     rp.last_checked = True
@@ -109,8 +117,8 @@ if __name__ == "__main__":
 
         # catch http request errors
         except requests.exceptions.HTTPError as err:
-            # TODO: add http code to send balancer
-            #       Access it with: err.response.status_code
+            # Create dictionary with url, error and timestamp 
+            balancer_metadata.append(make_dict(url, err.response.status_code)) 
             broken_urls.add(url)
             continue
 
@@ -162,6 +170,9 @@ if __name__ == "__main__":
             if (absolute not in new_urls) and \
                 (absolute not in processed_urls):
                 new_urls.append(absolute)
-
+                
+        # create a JSON object to send metadata to balancer 
+        balancer_data = json.dumps(balancer_metadata)
+        # TODO: send metadata to balancer 
         print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
             .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
