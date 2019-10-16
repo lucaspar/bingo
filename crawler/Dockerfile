@@ -3,10 +3,25 @@ FROM base as builder
 
 RUN mkdir /install
 WORKDIR /install
-COPY requirements.txt /requirements.txt
-RUN pip install --install-option="--prefix=/install" -r /requirements.txt
-
 FROM base
+
+# required files
 COPY --from=builder /install /usr/local
-COPY src /app
-WORKDIR /app
+COPY .env poetry.lock pyproject.toml /bingo/
+COPY src /bingo/bin
+
+# system requirements
+RUN apk --no-cache add curl
+RUN apk add --no-cache --update python3-dev gcc build-base libxml2-dev libxslt-dev
+
+# project requirements
+WORKDIR /bingo/bin
+RUN curl -sSL https://raw.githubusercontent.com/sdispater/poetry/master/get-poetry.py | python
+ENV PATH="/root/.local/bin:/root/.poetry/bin:${PATH}"
+RUN source $HOME/.poetry/env
+RUN poetry self:update
+RUN poetry config settings.virtualenvs.create false
+RUN poetry install --no-interaction
+
+# execute
+CMD ["python", "/bingo/bin/crawler_core.py"]
