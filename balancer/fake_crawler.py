@@ -35,11 +35,13 @@ connection_2, client_address_2 = sock_2.accept()
 try:
     print("Connection from", client_address_2)
 
+    total_data = []
+
     while True:
         urls = connection_2.recv(receive_size)
 
         if urls:
-            pass
+            total_data.append(urls)
         else:
             print("No more data...")
             break
