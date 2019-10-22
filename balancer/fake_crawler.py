@@ -4,58 +4,51 @@
 
 # Import useful libs
 import socket
-
+import json
 
 receive_size = 1024
 
-# Load tne fake data from JSON
-data = ""
+# Load the fake data from JSON
+json_path = "/Users/kiyoshi/Desktop/2019_Fall/OS/project/bingo/balancer/fake_metadata.json"
+
+with open(json_path) as json_file:
+    data = json.load(json_file)
+
+# Encode the data into bytes
+data_str = json.dumps(data)
 
 # Set up the 1st port and hostname
 # Crawler sends the metadata, balancer receives
-PORT_1 = 12345
-HOSTNAME_1 = '127.0.0.1'
+PORT = 12345
+HOSTNAME = '127.0.0.1'
 
-# Set up the 2nd port and hostname
-# Balancer sends the URLs, crawler receives
-PORT_2 = 23456
-HOSTNAME_2 = '127.0.0.2'
-
-# Socket 2: crawler listens
-sock_2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server_address_2 = (HOSTNAME_2, PORT_2)
-print("Listening on {}:{}".format(HOSTNAME_2, PORT_2))
-sock_2.bind(server_address_2)
-sock_2.listen(1)
-
-# Socket 2: crawler accepts
-connection_2, client_address_2 = sock_2.accept()
-
-# Socket 2: crawler receives
-try:
-    print("Connection from", client_address_2)
-
-    total_data = []
+# Socket connection: crawler connects
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.connect((HOSTNAME, PORT))
 
     while True:
-        urls = connection_2.recv(receive_size)
+        # Socket connection: crawler receives
+        try:
+            total_data = ""
 
-        if urls:
-            total_data.append(urls)
-        else:
-            print("No more data...")
-            break
+            while True:
+                # Receive the URLs and decode
+                urls = sock.recv(receive_size)
+                urls_decode = urls.decode()
 
-except Exception as e:
-    print str(e)
+                if urls:
+                    total_data += urls
+                else:
+                    print("No more data.")
+                    break
 
-"""
-The crawler uses the URLs and starts crawling
-And blablabla
-"""
-# Socket 1: crawler connects
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock_1:
-    sock_1.connect((HOSTNAME_1, PORT_1))
+        except Exception as e:
+            print(str(e))
 
-    # Socket 1: crawler sends
-    sock_1.sendall(data)
+        # XXXXXX
+
+        # Socket connection: crawler sends
+        sock.sendall(data_str.encode())
+
+
+
