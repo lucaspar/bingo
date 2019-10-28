@@ -17,7 +17,7 @@ receive_size = 1024
 thresh_url = 0
 
 # Set up the port and hostname
-PORT = 12345
+PORT = 23456
 HOSTNAME = '127.0.0.1'
 
 #######################################
@@ -117,24 +117,27 @@ while True:
     one_random_url = conn.randomkey()
     print(one_random_url)
 
-    # # Encode the data into bytes
-    # one_random_url_byte = one_random_url.encode()
+    # Get the size of data and send it to the crawler.
+    print("Sending the size of data")
+    connection.sendall(str(len(one_random_url)))
 
+    # Send the URL to the crawler
     print("Sending the URL...")
-    sock.sendall(one_random_url)
+    connection.sendall(one_random_url)
 
     # Socket connection: balancer receives metadata
     try:
-        total_data = ""
+        total_data = b''
 
         while True:
             # Receive the metadata and decode
-            str_metadata = sock.recv(receive_size)
-            str_metadata_decode = str_metadata.decode()
+            str_metadata = connection.recv(receive_size)
 
             if str_metadata:
-                total_data += str_metadata_decode
+                total_data += str_metadata
             else:
+                str_metadata_decode = total_data.decode()
+
                 print("No more data.")
                 break
 
@@ -147,5 +150,5 @@ while True:
         """
 
     except Exception as e:
+        print("nnn")
         print(str(e))
-

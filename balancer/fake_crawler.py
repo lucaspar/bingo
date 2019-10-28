@@ -9,7 +9,7 @@ import json
 receive_size = 1024
 
 # Load the fake data from JSON
-json_path = "/Users/kiyoshi/Desktop/2019_Fall/OS/project/bingo/balancer/fake_metadata.json"
+json_path = "fake_metadata.json"
 
 with open(json_path) as json_file:
     data = json.load(json_file)
@@ -19,7 +19,7 @@ data_str = json.dumps(data)
 
 # Set up the 1st port and hostname
 # Crawler sends the metadata, balancer receives
-PORT = 12345
+PORT = 23456
 HOSTNAME = '127.0.0.1'
 
 # Socket connection: crawler connects
@@ -28,23 +28,30 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 
     while True:
         # Socket connection: crawler receives
+        total_data = b''
+
         try:
-            total_data = ""
+            # Receive the size of the URL
+            print("Receiving the size of the URL.")
+            url_size_str = sock.recv(receive_size)
+            print(url_size_str)
+            url_size = int(url_size_str)
+            print("Size of the URL is %d" % url_size)
 
-            while True:
-                # Receive the URLs and decode
-                urls = sock.recv(receive_size)
-                urls_decode = urls.decode()
+            # Receive the URLs and decode
+            print("Receiving the URLs.")
+            urls = sock.recv(url_size)
 
-                if urls:
-                    total_data += urls
-                else:
-                    print("No more data.")
-                    break
+            print(type(urls), urls)
+
+            total_data += urls
+
 
         except Exception as e:
+            print("ttt")
             print(str(e))
 
+        print(total_data)
         # XXXXXX
 
         # Socket connection: crawler sends
