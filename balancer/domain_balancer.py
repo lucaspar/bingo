@@ -71,13 +71,25 @@ def process_metadata_str(metadata_str):
 
     return result
 
-def check_data_with_redis(data):
+def check_redis_and_save_data(redis_conn, data):
     """
+    Write URLs to the URL Map with some metadata (see below).
+    If URL already exists, do nothing.
 
+    :parameter:
+        data: de-duplicated metadata
     :return:
+        N/A
     """
+    for key in data:
+        value = data.get(key, {})
 
-    pass
+        # Check whether this key exists in redis
+        if redis_conn.exists(key):
+            pass
+        else:
+            redis_conn.hmset(key, value)
+
 
 
 #######################################
@@ -153,9 +165,10 @@ while True:
         metadata = process_metadata_str(ast.literal_eval(str_metadata_decode))
 
         # Compare the data with that in Redis and decide whether to save
-        print("Saving metadata into ")
-        check_data_with_redis(metadata)
-
+        print("Saving metadata into Redis database...")
+        check_redis_and_save_data(redis_conn=conn,
+                                  data=metadata)
 
     except Exception as e:
         print(str(e))
+        break
