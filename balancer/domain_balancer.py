@@ -7,6 +7,7 @@
 # Import useful libs
 import socket
 import redis
+import ast
 
 #######################################
 # Define some parameters
@@ -57,12 +58,18 @@ def balanced_domain_from_redis(urls):
 
 def process_metadata_str(metadata_str):
     """
-
+    :parameter
+        metadata_str: the decoded metadata received from the crawler
     :return:
+        A metadata dictionary after de-duplication.
     """
-    #TODO: Receive the metadata string, organize and deduplicate
+    result = {}
 
-    pass
+    for key, value in metadata_str.items():
+        if value not in result.values():
+            result[key] = value
+
+    return result
 
 def check_data_with_redis(data):
     """
@@ -131,7 +138,7 @@ while True:
 
         # Receive the size of the data first
         print("Receiving the size of the crawler data.")
-        data_size_str = sock.recv(receive_size)
+        data_size_str = connection.recv(receive_size)
         data_size = int(data_size_str)
 
         # Receive the metadata and decode
@@ -139,14 +146,16 @@ while True:
         total_data += str_metadata
         str_metadata_decode = total_data.decode()
 
-        """
+        print(str_metadata_decode)
+
         # Organize the raw data received and deduplicate
-        metadata = process_metadata_str(total_data)
+        print("Processing data and remove duplicates...")
+        metadata = process_metadata_str(ast.literal_eval(str_metadata_decode))
 
         # Compare the data with that in Redis and decide whether to save
+        print("Saving metadata into ")
         check_data_with_redis(metadata)
-        """
+
 
     except Exception as e:
-        print("nnn")
         print(str(e))

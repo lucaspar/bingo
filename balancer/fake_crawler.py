@@ -46,7 +46,6 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 
 
         except Exception as e:
-            print("ttt")
             print(str(e))
 
         # Socket connection: crawler sends
