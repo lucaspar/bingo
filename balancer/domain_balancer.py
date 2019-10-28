@@ -119,7 +119,7 @@ while True:
 
     # Get the size of data and send it to the crawler.
     print("Sending the size of data")
-    connection.sendall(str(len(one_random_url)))
+    connection.sendall(str(len(one_random_url)).encode())
 
     # Send the URL to the crawler
     print("Sending the URL...")
@@ -129,17 +129,15 @@ while True:
     try:
         total_data = b''
 
-        while True:
-            # Receive the metadata and decode
-            str_metadata = connection.recv(receive_size)
+        # Receive the size of the data first
+        print("Receiving the size of the crawler data.")
+        data_size_str = sock.recv(receive_size)
+        data_size = int(data_size_str)
 
-            if str_metadata:
-                total_data += str_metadata
-            else:
-                str_metadata_decode = total_data.decode()
-
-                print("No more data.")
-                break
+        # Receive the metadata and decode
+        str_metadata = connection.recv(data_size)
+        total_data += str_metadata
+        str_metadata_decode = total_data.decode()
 
         """
         # Organize the raw data received and deduplicate

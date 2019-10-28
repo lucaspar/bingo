@@ -34,27 +34,28 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             # Receive the size of the URL
             print("Receiving the size of the URL.")
             url_size_str = sock.recv(receive_size)
-            print(url_size_str)
             url_size = int(url_size_str)
             print("Size of the URL is %d" % url_size)
 
             # Receive the URLs and decode
             print("Receiving the URLs.")
             urls = sock.recv(url_size)
-
-            print(type(urls), urls)
-
+            # print(type(urls), urls)
             total_data += urls
+            total_data_decode = total_data.decode()
 
 
         except Exception as e:
             print("ttt")
             print(str(e))
 
-        print(total_data)
-        # XXXXXX
-
         # Socket connection: crawler sends
+        # Same as the balancer, get the size of the data first
+        print("Sending the size of data")
+        sock.sendall(str(len(data_str)).encode())
+
+        # Then, send the whole data to the balancer
+        print("Sending metadata.")
         sock.sendall(data_str.encode())
 
 
