@@ -150,7 +150,7 @@ if __name__ == "__main__":
             absolute_parts = urlsplit(absolute)
 
             # Cases in which the URL will be discarded:
-            #   If `absolute` is not a valid URL : TODO
+            #   If `absolute` is not a valid URL: TODO - use regex - ('^(?:[a-z]+:)?//', 'i') to see if abs or rel  
             #   If `absolute_parts.scheme` is not known (http/https)
             #   If `absolute` has a file extension and it is not of interest
             known_schem = ["http", "https"]
