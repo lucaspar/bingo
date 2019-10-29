@@ -50,16 +50,16 @@ proxy_list = bingo.retrieve_proxy_ips()
 random = bingo.random_proxy(proxy_list) 
 proxy = proxy_list[random]
 # Sophia : Code establish communication between client and server to request and send URLS
-# PORT = 23456
-# HOSTNAME = '127.0.0.1'
+PORT = 23456
+HOSTNAME = '127.0.0.1'
 
-# sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-# server_address = (HOSTNAME, PORT)
-# sock.bind(server_address)
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server_address = (HOSTNAME, PORT)
+sock.bind(server_address)
 
-# with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock: 
-#     sock.connect((HOST, PORT))
-#     sock.sendall()
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock: 
+     sock.connect((HOST, PORT))
+     sock.sendall()
 
 
 
