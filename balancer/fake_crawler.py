@@ -34,6 +34,8 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             # Receive the size of the URL
             print("Receiving the size of the URL.")
             url_size_str = sock.recv(receive_size)
+            print("Maybe something is wrong here???")
+            print(url_size_str)
             url_size = int(url_size_str)
             print("Size of the URL is %d" % url_size)
 

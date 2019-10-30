@@ -22,6 +22,7 @@ class domain_balancer(object):
         self.PORT = 23456
         self.HOSTNAME = '127.0.0.1'
         self.redis_conn = redis.Redis('localhost')
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def tmp_create_domain(self):
         """
@@ -78,23 +79,31 @@ class domain_balancer(object):
             else:
                 conn.hmset(key, value)
 
-    def get_socket_connection(self):
+    def get_socket_listen(self):
         """
 
         :return:
         """
         # Socket connection: balancer starts to listen
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_address = (self.HOSTNAME, self.PORT)
         print("Listening on {}:{}".format(self.HOSTNAME, self.PORT))
-        sock.bind(server_address)
-        sock.listen(1)
+        self.sock.bind(server_address)
+        self.sock.listen(1)
+
+
+
+    def get_socket_acceptance(self):
+        """
+
+        :return:
+        """
 
         # Socket connection: balancer accepts
-        connection, client_address = sock.accept()
+        connection, client_address = self.sock.accept()
         print("Connection accepted.")
 
         return connection, client_address
+
 
     def get_balanced_urls(self):
         """
@@ -134,7 +143,6 @@ class domain_balancer(object):
        :param sock:
        :return:
        """
-
        print("A new thread started!")
 
        try:
@@ -142,10 +150,14 @@ class domain_balancer(object):
                # Get the URL list
                # TODO: Use the get_balanced_urls function in the future
                #url_list = self.get_balanced_urls()
+
                url_list = self.get_one_url_for_test()
+               print("here is the url list ")
+               print(url_list)
 
                # Get the size of data and send it to the crawler.
                print("Sending the size of data")
+               print(str(len(url_list)).encode())
                conn.sendall(str(len(url_list)).encode())
 
                # Then send the URL to the crawler
@@ -187,8 +199,8 @@ class domain_balancer(object):
 if __name__ == '__main__':
     balancer = domain_balancer()
 
-    # Connect to the socket: listen and accept
-    sock_conn, sock_add = balancer.get_socket_connection()
+    # Connect to the socket: listen
+    balancer.get_socket_listen()
 
     # Build the redis database and save sample
     balancer.tmp_create_domain()
@@ -197,11 +209,12 @@ if __name__ == '__main__':
     # Make multi-thread for socket communication
     while True:
         try:
+            # Get socket acceptance.
+            sock_conn, sock_add = balancer.get_socket_acceptance()
+
             th = threading.Thread(target=balancer.create_one_thread,
                                   args=(sock_conn, sock_add))
             th.start()
 
         except:
             break
-
-
