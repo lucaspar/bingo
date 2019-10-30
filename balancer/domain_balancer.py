@@ -137,7 +137,7 @@ class domain_balancer(object):
         return(self.redis_conn.randomkey())
 
 
-    def create_one_thread(self, sock, conn):
+    def create_one_thread(self, conn, add):
        """
 
        :param sock:
@@ -152,12 +152,12 @@ class domain_balancer(object):
                #url_list = self.get_balanced_urls()
 
                url_list = self.get_one_url_for_test()
-               print("here is the url list ")
-               print(url_list)
+               # print("here is the url list ")
+               # print(url_list)
 
                # Get the size of data and send it to the crawler.
                print("Sending the size of data")
-               print(str(len(url_list)).encode())
+               # print(str(len(url_list)).encode())
                conn.sendall(str(len(url_list)).encode())
 
                # Then send the URL to the crawler
@@ -170,11 +170,13 @@ class domain_balancer(object):
                    print("Receiving the size of the crawler data.")
                    data_size_str = conn.recv(self.receive_size)
                    data_size = int(data_size_str)
+                   print("Metadata size:")
+                   print(data_size)
 
                    # Receive the metadata and decode
                    total_data = conn.recv(data_size)
                    str_metadata_decode = total_data.decode()
-                   print(str_metadata_decode)
+                   # print(str_metadata_decode)
 
                    # Organize the raw data received and deduplicate
                    print("Processing data and remove duplicates...")
@@ -186,10 +188,14 @@ class domain_balancer(object):
 
                except Exception as e:
                    print(str(e))
-                   break
+                   continue
 
-       except:
-           sock.close()
+
+       except Exception as e:
+           print(str(e))
+           conn.close()
+           # pass
+
 
 
 

@@ -34,8 +34,8 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             # Receive the size of the URL
             print("Receiving the size of the URL.")
             url_size_str = sock.recv(receive_size)
-            print("Maybe something is wrong here???")
-            print(url_size_str)
+            # print("Maybe something is wrong here???")
+            # print(url_size_str)
             url_size = int(url_size_str)
             print("Size of the URL is %d" % url_size)
 
@@ -53,6 +53,8 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         # Socket connection: crawler sends
         # Same as the balancer, get the size of the data first
         print("Sending the size of data")
+        print("Size of the data")
+        print(str(len(data_str)).encode())
         sock.sendall(str(len(data_str)).encode())
 
         # Then, send the whole data to the balancer
