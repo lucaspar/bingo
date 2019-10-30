@@ -65,7 +65,7 @@ if __name__ == "__main__":
     new_urls = deque(url_list)
     processed_urls = set()
     foreign_urls = set()
-    broken_urls = set()
+    # broken_urls = set()
     local_urls = set()
     balancer_metadata = []
     rp = urllib.robotparser.RobotFileParser()
@@ -107,19 +107,20 @@ if __name__ == "__main__":
                     pass  # Can fetch
                 else:
                     continue  # Cannot fetch
-            
+            # TODO: What metadata should be sent to the balancer if website is good and robots says we cant scrape to avoid resending?   
             response = bp.request(url).next()
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "lxml")
             # Hash the URL using SHA1 algorithm, use as file name
             url_hash = hashlib.sha1(url.encode()).hexdigest()
             store_in_s3(bucket_name, url_hash, str(soup))
+            balancer_metadata.append(make_dict(url, response.status_code)) # sending successful crawls as well 
 
         # catch http request errors
         except requests.exceptions.HTTPError as err:
             # Create dictionary with url, error and timestamp 
             balancer_metadata.append(make_dict(url, err.response.status_code)) 
-            broken_urls.add(url)
+            # broken_urls.add(url)
             continue
 
         # some other unknown error
