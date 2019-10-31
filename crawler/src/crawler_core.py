@@ -13,38 +13,42 @@ import os
 import hashlib
 import urllib.robotparser
 from urllib.parse import urlparse
-import time 
+import time url_data = += urls 
+            url_data_decode = url_data.decode() 
+        except Exception as e: 
+            print(str(e))
 
 
 # Sophia : Code establish communication between client and server to request and send URLS
 PORT = 23456
 HOSTNAME = '127.0.0.1'
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-    sock.bind((HOSTNAME, PORT))
-    sock.listen()
-    conn, addr = sock.accept()
-    with conn: 
-        print('Connect by', addr) 
-        while True: 
-            data = conn.recv(1024) 
-            print(data)
-            if not data: 
-                break 
-             conn.sendall(data) 
-        
-"""
-def store_in_s3(bucket, file_name, data):
-    """
-    Creates a new object in S3
+receive_size = 1024 
 
-    :params:
-        bucket:     S3 bucket reference
-        file_name:  identifier string
-        data:       serializable data for storing
-    :return:
-        list: a list of available proxies
-    """
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock: 
+    sock.connect((HOSTNAME, PORT))
+
+    while True: 
+        try: 
+            urls = sock.recv(receive_size)
+            url_data = += urls 
+            url_list = url_data.decode()
+        except Exception as e: 
+            print(str(e))
+
+        
+def store_in_s3(bucket, file_name, data):
+    # Creates a new object in S3
+
+"""
+     :params:
+         bucket:     S3 bucket reference
+         file_name:  identifier string
+         data:       serializable data for storing
+     :return:
+         list: a list of available proxies
+
+    
     s3 = boto3.resource('s3')
     obj = s3.Object(bucket, file_name)
     res = obj.put(Body=json.dumps(data))
@@ -67,7 +71,7 @@ def get_robots_txt_url(url):
 
 if __name__ == "__main__":
 
-    url_list = ['https://en.wikipedia.org/wiki/Main_Page', 'https://www.yahoo.com/', 'https://cnn.com']
+    # url_list = ['https://en.wikipedia.org/wiki/Main_Page', 'https://www.yahoo.com/', 'https://cnn.com']
     new_urls = deque(url_list)
     processed_urls = set()
     foreign_urls = set()
@@ -119,7 +123,7 @@ if __name__ == "__main__":
             soup = BeautifulSoup(response.text, "lxml")
             # Hash the URL using SHA1 algorithm, use as file name
             url_hash = hashlib.sha1(url.encode()).hexdigest()
-            # store_in_s3(bucket_name, url_hash, str(soup))
+            store_in_s3(bucket_name, url_hash, str(soup))
             balancer_metadata.append(make_dict(url, response.status_code)) # sending successful crawls as well 
 
         # catch http request errors
@@ -180,6 +184,7 @@ if __name__ == "__main__":
                 
         # create a JSON object to send metadata to balancer 
         balancer_data = json.dumps(balancer_metadata)
-        # TODO: send metadata to balancer 
+        # TODO: send metadata to balancer
+        sock.sendall(balancer_data.encode()) 
         print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
             .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
