@@ -20,14 +20,20 @@ import time
 PORT = 23456
 HOSTNAME = '127.0.0.1'
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server_address = (HOSTNAME, PORT)
-sock.bind(server_address)
-
-# with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-#     sock.connect((HOST, PORT))
-#     sock.sendall()
-
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.bind((HOSTNAME, PORT))
+    sock.listen()
+    conn, addr = sock.accept()
+    with conn: 
+        print('Connect by', addr) 
+        while True: 
+            data = conn.recv(1024) 
+            print(data)
+            if not data: 
+                break 
+             conn.sendall(data) 
+        
+"""
 def store_in_s3(bucket, file_name, data):
     """
     Creates a new object in S3
@@ -44,7 +50,7 @@ def store_in_s3(bucket, file_name, data):
     res = obj.put(Body=json.dumps(data))
     # access more info with res['ResponseMetadata']
     return bool(res)
-
+"""
 def make_dict(url, err): 
     return {
         'url': url, 
@@ -113,7 +119,7 @@ if __name__ == "__main__":
             soup = BeautifulSoup(response.text, "lxml")
             # Hash the URL using SHA1 algorithm, use as file name
             url_hash = hashlib.sha1(url.encode()).hexdigest()
-            store_in_s3(bucket_name, url_hash, str(soup))
+            # store_in_s3(bucket_name, url_hash, str(soup))
             balancer_metadata.append(make_dict(url, response.status_code)) # sending successful crawls as well 
 
         # catch http request errors
