@@ -28,20 +28,20 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
     while True:
         try:
             # recv the size (number of bytes) of the payload
-            bytes = sock.recv(receive_size)
+            data = sock.recv(receive_size)
             # ack the size of the payload
-            sock.sendall(bytes)
+            sock.sendall(data)
 
             # receive the url using the size of the payload
-            url = sock.recv(int(bytes.decode()))
+            url = sock.recv(int(data.decode()))
             # ack the url
             sock.sendall(url)
 
             # decode from bytestream to string, then append to url_list
             url_list += url.decode()
 
-            print(bytes, url.decode())
-
+            print(data, url.decode())
+            print(url_list)
             # TODO: termination condition
             # as is, this will continue to go forever
 
