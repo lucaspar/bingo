@@ -13,34 +13,46 @@ import os
 import hashlib
 import urllib.robotparser
 from urllib.parse import urlparse
-import time url_data = += urls 
-            url_data_decode = url_data.decode() 
-        except Exception as e: 
-            print(str(e))
-
+import time
 
 # Sophia : Code establish communication between client and server to request and send URLS
 PORT = 23456
 HOSTNAME = '127.0.0.1'
 
-receive_size = 1024 
+receive_size = 1024
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock: 
+url_list = []
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
     sock.connect((HOSTNAME, PORT))
 
-    while True: 
-        try: 
-            urls = sock.recv(receive_size)
-            url_data = += urls 
-            url_list = url_data.decode()
-        except Exception as e: 
+    while True:
+        try:
+            # recv the size (number of bytes) of the payload
+            bytes = sock.recv(receive_size)
+            # ack the size of the payload
+            sock.sendall(bytes)
+
+            # receive the url using the size of the payload
+            url = sock.recv(int(bytes.decode()))
+            # ack the url
+            sock.sendall(url)
+
+            # decode from bytestream to string, then append to url_list
+            url_list += url.decode()
+
+            print(bytes, url.decode())
+
+            # TODO: termination condition
+            # as is, this will continue to go forever
+
+        except Exception as e:
             print(str(e))
 
-        
-def store_in_s3(bucket, file_name, data):
+
+# def store_in_s3(bucket, file_name, data):
     # Creates a new object in S3
 
-"""
+'''
      :params:
          bucket:     S3 bucket reference
          file_name:  identifier string
@@ -48,17 +60,16 @@ def store_in_s3(bucket, file_name, data):
      :return:
          list: a list of available proxies
 
-    
     s3 = boto3.resource('s3')
     obj = s3.Object(bucket, file_name)
     res = obj.put(Body=json.dumps(data))
     # access more info with res['ResponseMetadata']
     return bool(res)
-"""
-def make_dict(url, err): 
+'''
+def make_dict(url, err):
     return {
-        'url': url, 
-        'status': err, 
+        'url': url,
+        'status': err,
         'timestamp': time.time(),
     }
 
@@ -70,7 +81,6 @@ def get_robots_txt_url(url):
 
 
 if __name__ == "__main__":
-
     # url_list = ['https://en.wikipedia.org/wiki/Main_Page', 'https://www.yahoo.com/', 'https://cnn.com']
     new_urls = deque(url_list)
     processed_urls = set()
@@ -81,6 +91,7 @@ if __name__ == "__main__":
     rp = urllib.robotparser.RobotFileParser()
     # Trick rp library - fake an access to robots.txt from their POV
     rp.last_checked = True
+
 
     # load environment variables
     load_dotenv(dotenv_path='../.env')
@@ -100,7 +111,7 @@ if __name__ == "__main__":
         # setup proxy and make request
         try:
             bp = BingoProxy(concurrency=concurrency, timeout=timeout)
-            
+
             # Czech if can crawl
             try:
                 robots_url = get_robots_txt_url(url)
@@ -117,19 +128,19 @@ if __name__ == "__main__":
                     pass  # Can fetch
                 else:
                     continue  # Cannot fetch
-            # TODO: What metadata should be sent to the balancer if website is good and robots says we cant scrape to avoid resending?   
+            # TODO: What metadata should be sent to the balancer if website is good and robots says we cant scrape to avoid resending?
             response = bp.request(url).next()
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "lxml")
             # Hash the URL using SHA1 algorithm, use as file name
             url_hash = hashlib.sha1(url.encode()).hexdigest()
             store_in_s3(bucket_name, url_hash, str(soup))
-            balancer_metadata.append(make_dict(url, response.status_code)) # sending successful crawls as well 
+            balancer_metadata.append(make_dict(url, response.status_code)) # sending successful crawls as well
 
         # catch http request errors
         except requests.exceptions.HTTPError as err:
-            # Create dictionary with url, error and timestamp 
-            balancer_metadata.append(make_dict(url, err.response.status_code)) 
+            # Create dictionary with url, error and timestamp
+            balancer_metadata.append(make_dict(url, err.response.status_code))
             # broken_urls.add(url)
             continue
 
@@ -161,7 +172,7 @@ if __name__ == "__main__":
             absolute_parts = urlsplit(absolute)
 
             # Cases in which the URL will be discarded:
-            #   If `absolute` is not a valid URL: TODO - use regex - ('^(?:[a-z]+:)?//', 'i') to see if abs or rel  
+            #   If `absolute` is not a valid URL: TODO - use regex - ('^(?:[a-z]+:)?//', 'i') to see if abs or rel
             #   If `absolute_parts.scheme` is not known (http/https)
             #   If `absolute` has a file extension and it is not of interest
             known_schem = ["http", "https"]
@@ -181,10 +192,10 @@ if __name__ == "__main__":
             if (absolute not in new_urls) and \
                 (absolute not in processed_urls):
                 new_urls.append(absolute)
-                
-        # create a JSON object to send metadata to balancer 
+
+        # create a JSON object to send metadata to balancer
         balancer_data = json.dumps(balancer_metadata)
         # TODO: send metadata to balancer
-        sock.sendall(balancer_data.encode()) 
+        sock.sendall(balancer_data.encode())
         print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
             .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
