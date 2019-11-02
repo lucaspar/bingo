@@ -145,7 +145,7 @@ class domain_balancer(object):
                # TODO: Use the get_balanced_urls function in the future
                #url_list = self.get_balanced_urls()
 
-               url_list = ['https://en.wikipedia.org/wiki/Main_Page', 'https://www.yahoo.com/', 'https://cnn.com']
+               url_list = 'https://scrapethissite.com'
                print("here is the url list ")
                print(url_list)
 
@@ -156,7 +156,7 @@ class domain_balancer(object):
 
                # Then send the URL to the crawler
                print("Sending the URL...")
-               conn.sendall(url_list[0].encode())
+               conn.sendall(url_list.encode())
 
                # Socket connection: balancer receives metadata
                try:
@@ -170,7 +170,7 @@ class domain_balancer(object):
                    # Receive the metadata and decode
                    total_data = conn.recv(data_size)
                    str_metadata_decode = total_data.decode()
-                   # print(str_metadata_decode)
+                   print(str_metadata_decode)
 
                    # Organize the raw data received and deduplicate
                    print("Processing data and remove duplicates...")
