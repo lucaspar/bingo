@@ -115,6 +115,7 @@ def get_robots_txt_url(url):
 
 if __name__ == "__main__":
     # url_list = ['https://en.wikipedia.org/wiki/Main_Page', 'https://www.yahoo.com/', 'https://cnn.com']
+    blacklisted_urls = set() # good list of blacklisted urls 
     new_urls = deque(url_list)
     processed_urls = set()
     foreign_urls = set()
@@ -221,9 +222,10 @@ if __name__ == "__main__":
             else:
                 foreign_urls.add(absolute)
         
-            # check if new url has never been seen
+            # check if new url has never been seen or blacklisted 
             if (absolute not in new_urls) and \
-                (absolute not in processed_urls):
+                (absolute not in processed_urls) and \
+                (absolute not in blacklisted_urls) :
                 new_urls.append(absolute)
 
         # create a JSON object to send metadata to balancer
