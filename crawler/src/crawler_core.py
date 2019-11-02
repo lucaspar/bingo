@@ -6,7 +6,7 @@ from collections import deque
 from bs4 import BeautifulSoup
 import requests
 import socket
-import boto3
+# import boto3
 import json
 import re
 import os
@@ -22,6 +22,7 @@ HOSTNAME = '127.0.0.1'
 receive_size = 1024
 
 url_list = []
+'''
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
     sock.connect((HOSTNAME, PORT))
 
@@ -30,23 +31,55 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             # recv the size (number of bytes) of the payload
             data = sock.recv(receive_size)
             # ack the size of the payload
-            sock.sendall(data)
+            #sock.sendall(data)
 
             # receive the url using the size of the payload
             url = sock.recv(int(data.decode()))
             # ack the url
-            sock.sendall(url)
+            #sock.sendall(url)
 
             # decode from bytestream to string, then append to url_list
-            url_list += url.decode()
+            # swap comments if using url_list instead of one at a time
+            #url_list += url.decode()
+            url_list.append(url.decode())
 
             print(data, url.decode())
             print(url_list)
             # TODO: termination condition
+            break  # TODO
             # as is, this will continue to go forever
 
         except Exception as e:
             print(str(e))
+'''
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect((HOSTNAME, PORT))
+
+while True:
+    try:
+        # recv the size (number of bytes) of the payload
+        data = sock.recv(receive_size)
+        # ack the size of the payload
+        #sock.sendall(data)
+
+        # receive the url using the size of the payload
+        url = sock.recv(int(data.decode()))
+        # ack the url
+        #sock.sendall(url)
+
+        # decode from bytestream to string, then append to url_list
+        # swap comments if using url_list instead of one at a time
+        #url_list += url.decode()
+        url_list.append(url.decode())
+
+        print(data, url.decode())
+        print(url_list)
+        # TODO: termination condition
+        break  # TODO
+        # as is, this will continue to go forever
+
+    except Exception as e:
+        print(str(e))
 
 
 # def store_in_s3(bucket, file_name, data):
@@ -134,7 +167,7 @@ if __name__ == "__main__":
             soup = BeautifulSoup(response.text, "lxml")
             # Hash the URL using SHA1 algorithm, use as file name
             url_hash = hashlib.sha1(url.encode()).hexdigest()
-            store_in_s3(bucket_name, url_hash, str(soup))
+            # store_in_s3(bucket_name, url_hash, str(soup))
             balancer_metadata.append(make_dict(url, response.status_code)) # sending successful crawls as well
 
         # catch http request errors
@@ -187,7 +220,7 @@ if __name__ == "__main__":
                 local_urls.add(absolute)
             else:
                 foreign_urls.add(absolute)
-
+        
             # check if new url has never been seen
             if (absolute not in new_urls) and \
                 (absolute not in processed_urls):
@@ -195,7 +228,12 @@ if __name__ == "__main__":
 
         # create a JSON object to send metadata to balancer
         balancer_data = json.dumps(balancer_metadata)
+        # Get the size of the metdata and send to the balancer
+        print("sending the size of the metadata") 
+        sock.sendall(str(len(balancer_data)).encode())
         # TODO: send metadata to balancer
+        print("sending the metadata")
         sock.sendall(balancer_data.encode())
         print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
             .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
+sock.close()
