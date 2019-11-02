@@ -6,7 +6,7 @@ from collections import deque
 from bs4 import BeautifulSoup
 import requests
 import socket
-# import boto3
+import boto3
 import json
 import re
 import os
@@ -82,10 +82,9 @@ while True:
         print(str(e))
 
 
-# def store_in_s3(bucket, file_name, data):
-    # Creates a new object in S3
+def store_in_s3(bucket, file_name, data):
+    Creates a new object in S3
 
-'''
      :params:
          bucket:     S3 bucket reference
          file_name:  identifier string
@@ -98,7 +97,7 @@ while True:
     res = obj.put(Body=json.dumps(data))
     # access more info with res['ResponseMetadata']
     return bool(res)
-'''
+
 def make_dict(url, err):
     return {
         'url': url,
@@ -168,7 +167,7 @@ if __name__ == "__main__":
             soup = BeautifulSoup(response.text, "lxml")
             # Hash the URL using SHA1 algorithm, use as file name
             url_hash = hashlib.sha1(url.encode()).hexdigest()
-            # store_in_s3(bucket_name, url_hash, str(soup))
+            store_in_s3(bucket_name, url_hash, str(soup))
             balancer_metadata.append(make_dict(url, response.status_code)) # sending successful crawls as well
 
         # catch http request errors
