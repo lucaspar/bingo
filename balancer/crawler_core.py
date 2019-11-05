@@ -25,30 +25,25 @@ url_list = []
 '''
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
     sock.connect((HOSTNAME, PORT))
-
     while True:
         try:
             # recv the size (number of bytes) of the payload
             data = sock.recv(receive_size)
             # ack the size of the payload
             #sock.sendall(data)
-
             # receive the url using the size of the payload
             url = sock.recv(int(data.decode()))
             # ack the url
             #sock.sendall(url)
-
             # decode from bytestream to string, then append to url_list
             # swap comments if using url_list instead of one at a time
             #url_list += url.decode()
             url_list.append(url.decode())
-
             print(data, url.decode())
             print(url_list)
             # TODO: termination condition
             break  # TODO
             # as is, this will continue to go forever
-
         except Exception as e:
             print(str(e))
 '''
@@ -60,16 +55,16 @@ while True:
         # recv the size (number of bytes) of the payload
         data = sock.recv(receive_size)
         # ack the size of the payload
-        #sock.sendall(data)
+        # sock.sendall(data)
 
         # receive the url using the size of the payload
         url = sock.recv(int(data.decode()))
         # ack the url
-        #sock.sendall(url)
+        # sock.sendall(url)
 
         # decode from bytestream to string, then append to url_list
         # swap comments if using url_list instead of one at a time
-        #url_list += url.decode()
+        # url_list += url.decode()
         url_list.append(url.decode())
 
         print(data, url.decode())
@@ -80,32 +75,34 @@ while True:
 
     except Exception as e:
         print(str(e))
+        continue
 
 
 def store_in_s3(bucket, file_name, data):
+    """
     Creates a new object in S3
 
-    '''
      :params:
          bucket:     S3 bucket reference
          file_name:  identifier string
          data:       serializable data for storing
      :return:
          list: a list of available proxies
+    """
 
     s3 = boto3.resource('s3')
     obj = s3.Object(bucket, file_name)
     res = obj.put(Body=json.dumps(data))
     # access more info with res['ResponseMetadata']
     return bool(res)
-    '''
-    
+
 def make_dict(url, err):
     return {
         'url': url,
         'status': err,
         'timestamp': time.time(),
     }
+
 
 def get_robots_txt_url(url):
     # https://stackoverflow.com/questions/9626535/get-protocol-host-name-from-url
@@ -116,7 +113,7 @@ def get_robots_txt_url(url):
 
 if __name__ == "__main__":
     # url_list = ['https://en.wikipedia.org/wiki/Main_Page', 'https://www.yahoo.com/', 'https://cnn.com']
-    blacklisted_urls = set() # good list of blacklisted urls 
+    blacklisted_urls = set()  # good list of blacklisted urls
     new_urls = deque(url_list)
     processed_urls = set()
     foreign_urls = set()
@@ -127,12 +124,11 @@ if __name__ == "__main__":
     # Trick rp library - fake an access to robots.txt from their POV
     rp.last_checked = True
 
-
     # load environment variables
     load_dotenv(dotenv_path='../.env')
     bucket_name = os.getenv("S3_BUCKET_NAME")
     concurrency = int(os.getenv("CR_REQUESTS_CONCURRENCY", default=1))
-    timeout     = int(os.getenv("CR_REQUESTS_TIMEOUT", default=20))
+    timeout = int(os.getenv("CR_REQUESTS_TIMEOUT", default=20))
     print("Concurrency", concurrency, "Timeout", timeout)
 
     # TODO: submit found URLs to balancer; request new URLs from it.
@@ -169,8 +165,8 @@ if __name__ == "__main__":
             soup = BeautifulSoup(response.text, "lxml")
             # Hash the URL using SHA1 algorithm, use as file name
             url_hash = hashlib.sha1(url.encode()).hexdigest()
-            store_in_s3(bucket_name, url_hash, str(soup.encode('utf-8'))
-            balancer_metadata.append(make_dict(url, response.status_code)) # sending successful crawls as well
+            store_in_s3(bucket_name, url_hash, str(soup))
+            balancer_metadata.append(make_dict(url, response.status_code))  # sending successful crawls as well
 
         # catch http request errors
         except requests.exceptions.HTTPError as err:
@@ -214,7 +210,7 @@ if __name__ == "__main__":
             known_exten = ["html", "php", "jsp", "aspx"]
             last_words = absolute_parts.path.split('/')[-1].split('.')
             if absolute_parts.scheme not in known_schem or \
-                len(last_words) > 1 and (last_words[-1] not in known_exten):
+                    len(last_words) > 1 and (last_words[-1] not in known_exten):
                 continue
 
             # differ local and foreign urls (other domain/subdomain)
@@ -222,21 +218,21 @@ if __name__ == "__main__":
                 local_urls.add(absolute)
             else:
                 foreign_urls.add(absolute)
-        
-            # check if new url has never been seen or blacklisted 
+
+            # check if new url has never been seen or blacklisted
             if (absolute not in new_urls) and \
-                (absolute not in processed_urls) and \
-                (absolute not in blacklisted_urls) :
+                    (absolute not in processed_urls) and \
+                    (absolute not in blacklisted_urls):
                 new_urls.append(absolute)
 
         # create a JSON object to send metadata to balancer
         balancer_data = json.dumps(balancer_metadata)
         # Get the size of the metdata and send to the balancer
-        print("sending the size of the metadata") 
+        print("sending the size of the metadata")
         sock.sendall(str(len(balancer_data)).encode())
         # TODO: send metadata to balancer
         print("sending the metadata")
         sock.sendall(balancer_data.encode())
-        print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
-            .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
+        print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"
+              .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
 sock.close()
