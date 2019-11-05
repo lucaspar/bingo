@@ -83,9 +83,9 @@ while True:
 
 
 def store_in_s3(bucket, file_name, data):
-    Creates a new object in S3
-
     '''
+    Creates a new object in S3
+    
      :params:
          bucket:     S3 bucket reference
          file_name:  identifier string
