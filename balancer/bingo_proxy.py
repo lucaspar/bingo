@@ -20,7 +20,6 @@ from bs4 import BeautifulSoup
 from time import time as timer
 from fake_useragent import UserAgent
 from multiprocessing.pool import ThreadPool
-import os
 
 urllib3.disable_warnings()
 
