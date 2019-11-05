@@ -85,6 +85,7 @@ while True:
 def store_in_s3(bucket, file_name, data):
     Creates a new object in S3
 
+    '''
      :params:
          bucket:     S3 bucket reference
          file_name:  identifier string
@@ -97,7 +98,8 @@ def store_in_s3(bucket, file_name, data):
     res = obj.put(Body=json.dumps(data))
     # access more info with res['ResponseMetadata']
     return bool(res)
-
+    '''
+    
 def make_dict(url, err):
     return {
         'url': url,
@@ -167,7 +169,7 @@ if __name__ == "__main__":
             soup = BeautifulSoup(response.text, "lxml")
             # Hash the URL using SHA1 algorithm, use as file name
             url_hash = hashlib.sha1(url.encode()).hexdigest()
-            store_in_s3(bucket_name, url_hash, str(soup))
+            store_in_s3(bucket_name, url_hash, str(soup.encode('utf-8'))
             balancer_metadata.append(make_dict(url, response.status_code)) # sending successful crawls as well
 
         # catch http request errors
