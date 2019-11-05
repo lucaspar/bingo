@@ -13,42 +13,97 @@ import os
 import hashlib
 import urllib.robotparser
 from urllib.parse import urlparse
-import time 
-
+import time
 
 # Sophia : Code establish communication between client and server to request and send URLS
-# PORT = 23456
-# HOSTNAME = '127.0.0.1'
+PORT = 23456
+HOSTNAME = '127.0.0.1'
 
-# sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-# server_address = (HOSTNAME, PORT)
-# sock.bind(server_address)
+receive_size = 1024
 
-# with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-#     sock.connect((HOST, PORT))
-#     sock.sendall()
+url_list = []
+'''
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.connect((HOSTNAME, PORT))
+
+    while True:
+        try:
+            # recv the size (number of bytes) of the payload
+            data = sock.recv(receive_size)
+            # ack the size of the payload
+            #sock.sendall(data)
+
+            # receive the url using the size of the payload
+            url = sock.recv(int(data.decode()))
+            # ack the url
+            #sock.sendall(url)
+
+            # decode from bytestream to string, then append to url_list
+            # swap comments if using url_list instead of one at a time
+            #url_list += url.decode()
+            url_list.append(url.decode())
+
+            print(data, url.decode())
+            print(url_list)
+            # TODO: termination condition
+            break  # TODO
+            # as is, this will continue to go forever
+
+        except Exception as e:
+            print(str(e))
+'''
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect((HOSTNAME, PORT))
+
+while True:
+    try:
+        # recv the size (number of bytes) of the payload
+        data = sock.recv(receive_size)
+        # ack the size of the payload
+        #sock.sendall(data)
+
+        # receive the url using the size of the payload
+        url = sock.recv(int(data.decode()))
+        # ack the url
+        #sock.sendall(url)
+
+        # decode from bytestream to string, then append to url_list
+        # swap comments if using url_list instead of one at a time
+        #url_list += url.decode()
+        url_list.append(url.decode())
+
+        print(data, url.decode())
+        print(url_list)
+        # TODO: termination condition
+        break  # TODO
+        # as is, this will continue to go forever
+
+    except Exception as e:
+        print(str(e))
+
 
 def store_in_s3(bucket, file_name, data):
-    """
     Creates a new object in S3
 
-    :params:
-        bucket:     S3 bucket reference
-        file_name:  identifier string
-        data:       serializable data for storing
-    :return:
-        list: a list of available proxies
-    """
+    '''
+     :params:
+         bucket:     S3 bucket reference
+         file_name:  identifier string
+         data:       serializable data for storing
+     :return:
+         list: a list of available proxies
+
     s3 = boto3.resource('s3')
     obj = s3.Object(bucket, file_name)
     res = obj.put(Body=json.dumps(data))
     # access more info with res['ResponseMetadata']
     return bool(res)
-
-def make_dict(url, err): 
+    '''
+    
+def make_dict(url, err):
     return {
-        'url': url, 
-        'status': err, 
+        'url': url,
+        'status': err,
         'timestamp': time.time(),
     }
 
@@ -60,17 +115,18 @@ def get_robots_txt_url(url):
 
 
 if __name__ == "__main__":
-
-    url_list = ['https://en.wikipedia.org/wiki/Main_Page', 'https://www.yahoo.com/', 'https://cnn.com']
+    # url_list = ['https://en.wikipedia.org/wiki/Main_Page', 'https://www.yahoo.com/', 'https://cnn.com']
+    blacklisted_urls = set() # good list of blacklisted urls 
     new_urls = deque(url_list)
     processed_urls = set()
     foreign_urls = set()
-    broken_urls = set()
+    # broken_urls = set()
     local_urls = set()
     balancer_metadata = []
     rp = urllib.robotparser.RobotFileParser()
     # Trick rp library - fake an access to robots.txt from their POV
     rp.last_checked = True
+
 
     # load environment variables
     load_dotenv(dotenv_path='../.env')
@@ -90,7 +146,7 @@ if __name__ == "__main__":
         # setup proxy and make request
         try:
             bp = BingoProxy(concurrency=concurrency, timeout=timeout)
-            
+
             # Czech if can crawl
             try:
                 robots_url = get_robots_txt_url(url)
@@ -107,19 +163,20 @@ if __name__ == "__main__":
                     pass  # Can fetch
                 else:
                     continue  # Cannot fetch
-            
+            # TODO: What metadata should be sent to the balancer if website is good and robots says we cant scrape to avoid resending?
             response = bp.request(url).next()
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "lxml")
             # Hash the URL using SHA1 algorithm, use as file name
             url_hash = hashlib.sha1(url.encode()).hexdigest()
-            store_in_s3(bucket_name, url_hash, str(soup))
+            store_in_s3(bucket_name, url_hash, str(soup.encode('utf-8'))
+            balancer_metadata.append(make_dict(url, response.status_code)) # sending successful crawls as well
 
         # catch http request errors
         except requests.exceptions.HTTPError as err:
-            # Create dictionary with url, error and timestamp 
-            balancer_metadata.append(make_dict(url, err.response.status_code)) 
-            broken_urls.add(url)
+            # Create dictionary with url, error and timestamp
+            balancer_metadata.append(make_dict(url, err.response.status_code))
+            # broken_urls.add(url)
             continue
 
         # some other unknown error
@@ -150,7 +207,7 @@ if __name__ == "__main__":
             absolute_parts = urlsplit(absolute)
 
             # Cases in which the URL will be discarded:
-            #   If `absolute` is not a valid URL : TODO
+            #   If `absolute` is not a valid URL: TODO - use regex - ('^(?:[a-z]+:)?//', 'i') to see if abs or rel
             #   If `absolute_parts.scheme` is not known (http/https)
             #   If `absolute` has a file extension and it is not of interest
             known_schem = ["http", "https"]
@@ -165,14 +222,21 @@ if __name__ == "__main__":
                 local_urls.add(absolute)
             else:
                 foreign_urls.add(absolute)
-
-            # check if new url has never been seen
+        
+            # check if new url has never been seen or blacklisted 
             if (absolute not in new_urls) and \
-                (absolute not in processed_urls):
+                (absolute not in processed_urls) and \
+                (absolute not in blacklisted_urls) :
                 new_urls.append(absolute)
-                
-        # create a JSON object to send metadata to balancer 
+
+        # create a JSON object to send metadata to balancer
         balancer_data = json.dumps(balancer_metadata)
-        # TODO: send metadata to balancer 
+        # Get the size of the metdata and send to the balancer
+        print("sending the size of the metadata") 
+        sock.sendall(str(len(balancer_data)).encode())
+        # TODO: send metadata to balancer
+        print("sending the metadata")
+        sock.sendall(balancer_data.encode())
         print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
             .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
+sock.close()
