@@ -92,13 +92,14 @@ def store_in_s3(bucket, file_name, data):
          data:       serializable data for storing
      :return:
          list: a list of available proxies
-
+    '''
+    
     s3 = boto3.resource('s3')
     obj = s3.Object(bucket, file_name)
     res = obj.put(Body=json.dumps(data))
     # access more info with res['ResponseMetadata']
     return bool(res)
-    '''
+    
     
 def make_dict(url, err):
     return {
@@ -169,7 +170,7 @@ if __name__ == "__main__":
             soup = BeautifulSoup(response.text, "lxml")
             # Hash the URL using SHA1 algorithm, use as file name
             url_hash = hashlib.sha1(url.encode()).hexdigest()
-            store_in_s3(bucket_name, url_hash, str(soup.encode('utf-8'))
+            store_in_s3(bucket_name, url_hash, str(soup).encode('utf-8'))
             balancer_metadata.append(make_dict(url, response.status_code)) # sending successful crawls as well
 
         # catch http request errors
