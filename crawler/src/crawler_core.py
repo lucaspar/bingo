@@ -120,7 +120,8 @@ def get_robots_txt_url(url):
 
 if __name__ == "__main__":
     url_list = ['https://en.wikipedia.org/wiki/Main_Page']
-    blacklisted_urls = set() # good list of blacklisted urls 
+    blacklisted_urls = set() # good list of blacklisted urls
+    blacklisted_domains = set() 
     new_urls = deque(url_list)
     processed_urls = set()
     foreign_urls = set()
@@ -130,6 +131,19 @@ if __name__ == "__main__":
     rp = urllib.robotparser.RobotFileParser()
     # Trick rp library - fake an access to robots.txt from their POV
     rp.last_checked = True
+
+     # TODO: download blacklisted URLs and domains from S3 
+
+     # load blacklisted urls and domains
+    with open('../../blacklisted_urls.txt', 'r') as f:
+        blacklisted_urls = set(f.read().split())
+
+    print('# of blacklisted urls:', len(blacklisted_urls))
+
+    with open('../../blacklisted_domains.txt', 'r') as f:
+        blacklisted_domains = set(f.read().split())
+
+    print('# of blacklisted domains:', len(blacklisted_domains))
 
 
     # load environment variables
@@ -227,11 +241,16 @@ if __name__ == "__main__":
             else:
                 foreign_urls.add(absolute)
         
-            # check if new url has never been seen or blacklisted 
+            # check if new url has never been seen or blacklisted
             if (absolute not in new_urls) and \
                 (absolute not in processed_urls) and \
                 (absolute not in blacklisted_urls) :
-                new_urls.append(absolute)
+
+                # check domain too
+                domain = urlparse(absolute).netloc
+
+                if domain not in blacklisted_domains:
+                    new_urls.append(absolute)
 
         # create a JSON object to send metadata to balancer
         balancer_data = json.dumps(balancer_metadata)
