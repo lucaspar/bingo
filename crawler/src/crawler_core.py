@@ -52,6 +52,8 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         except Exception as e:
             print(str(e))
 '''
+#uncomment for comm 
+'''
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.connect((HOSTNAME, PORT))
 
@@ -81,7 +83,7 @@ while True:
     except Exception as e:
         print(str(e))
 
-
+'''
 def store_in_s3(bucket, file_name, data):
     '''
     Creates a new object in S3
@@ -96,7 +98,8 @@ def store_in_s3(bucket, file_name, data):
     
     s3 = boto3.resource('s3')
     obj = s3.Object(bucket, file_name)
-    res = obj.put(Body=json.dumps(data))
+    # res = obj.put(Body=json.dumps(data))
+    res = obj.put(Body=data)
     # access more info with res['ResponseMetadata']
     return bool(res)
     
@@ -116,7 +119,7 @@ def get_robots_txt_url(url):
 
 
 if __name__ == "__main__":
-    # url_list = ['https://en.wikipedia.org/wiki/Main_Page', 'https://www.yahoo.com/', 'https://cnn.com']
+    url_list = ['https://en.wikipedia.org/wiki/Main_Page']
     blacklisted_urls = set() # good list of blacklisted urls 
     new_urls = deque(url_list)
     processed_urls = set()
@@ -130,7 +133,7 @@ if __name__ == "__main__":
 
 
     # load environment variables
-    load_dotenv(dotenv_path='../.env')
+    load_dotenv(dotenv_path='../.env.example')
     bucket_name = os.getenv("S3_BUCKET_NAME")
     concurrency = int(os.getenv("CR_REQUESTS_CONCURRENCY", default=1))
     timeout     = int(os.getenv("CR_REQUESTS_TIMEOUT", default=20))
@@ -170,7 +173,7 @@ if __name__ == "__main__":
             soup = BeautifulSoup(response.text, "lxml")
             # Hash the URL using SHA1 algorithm, use as file name
             url_hash = hashlib.sha1(url.encode()).hexdigest()
-            store_in_s3(bucket_name, url_hash, str(soup).encode('utf-8'))
+            store_in_s3(bucket_name, url_hash, soup.prettify().encode('utf-8'))
             balancer_metadata.append(make_dict(url, response.status_code)) # sending successful crawls as well
 
         # catch http request errors
@@ -234,10 +237,10 @@ if __name__ == "__main__":
         balancer_data = json.dumps(balancer_metadata)
         # Get the size of the metdata and send to the balancer
         print("sending the size of the metadata") 
-        sock.sendall(str(len(balancer_data)).encode())
+        # sock.sendall(str(len(balancer_data)).encode()) #uncomment for comm
         # TODO: send metadata to balancer
         print("sending the metadata")
-        sock.sendall(balancer_data.encode())
+        # sock.sendall(balancer_data.encode()) #uncomment for comm 
         print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
             .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
-sock.close()
+# sock.close() #uncomment for comm 
