@@ -11,13 +11,13 @@ import re
 import os
 from nltk.tokenize import word_tokenize
 from nltk.stem.snowball import SnowballStemmer
-from sklearn.feature_extraction.stop_words import ENGLISH_STOP_WORDS
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 import random
-import pymongo
 from pymongo import MongoClient
 from collections import defaultdict
+from nltk.corpus import wordnet
+import nltk
 
 class indexer(object):
     def __init__(self):
@@ -35,6 +35,7 @@ class indexer(object):
         # Set other parameters
         self.debug = True
         self.nb_test_doc = 3
+        self.len_limit = 2
 
         # MongoDB set up
         self.mongo_host = 'localhost'
@@ -94,6 +95,25 @@ class indexer(object):
         db = client[self.db_name]
 
         return client, db
+
+
+    def get_wordnet_pos(self, word):
+        """
+        Map POS tag to first character lemmatize() accepts
+
+        """
+        # if self.debug:
+        #     print(word)
+        tag = nltk.pos_tag([word])[0][1][0].upper()
+
+        tag_dict = {"J": wordnet.ADJ,
+                    "N": wordnet.NOUN,
+                    "V": wordnet.VERB,
+                    "R": wordnet.ADV}
+
+        # print(tag_dict.get(tag, wordnet.NOUN))
+
+        return tag_dict.get(tag, wordnet.NOUN)
 
 
 
@@ -162,23 +182,20 @@ class indexer(object):
             for word in filtered_list:
                 stem_list.append(stem.stem(word))
 
-            # if self.debug:
-            #     print("[Debug info] Words after stemming:")
-            #     for word in stem_list:
-            #         print(word)
-
-
             # Lemmatization
-            # TODO: How to choose the pos for different words??
             one_result_list = []
 
             lemmatizer = WordNetLemmatizer()
 
             for word in stem_list:
-                one_result_list.append(lemmatizer.lemmatize(word, pos="v"))
+                # one_result_list.append(lemmatizer.lemmatize(word, pos="v"))
+                if len(word) >= self.len_limit:
+                    one_result_list.append(lemmatizer.lemmatize(word, self.get_wordnet_pos(word)))
 
-                # if self.debug:
-                #     print (word, lemmatizer.lemmatize(word, pos="v"))
+                    if self.debug:
+                        print(word, lemmatizer.lemmatize(word, self.get_wordnet_pos(word)))
+                else:
+                    continue
 
             # Remove the duplications in a file before appending
             new_list = list(set(one_result_list))
