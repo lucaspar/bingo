@@ -15,11 +15,15 @@ from sklearn.feature_extraction.stop_words import ENGLISH_STOP_WORDS
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 import random
+import pymongo
+from pymongo import MongoClient
+from collections import defaultdict
 
 class indexer(object):
     def __init__(self):
         # Load env variables
         load_dotenv(dotenv_path='../.env')
+
         self.BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
         self.AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
         self.AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
@@ -31,6 +35,11 @@ class indexer(object):
         # Set other parameters
         self.debug = True
         self.nb_test_doc = 1
+
+        # MongoDB set up
+        self.mongo_host = 'localhost'
+        self.mongo_port = 12345
+        self.db_name = 'inverted_index'
 
 
     def fetch_s3_obj(self):
@@ -63,9 +72,8 @@ class indexer(object):
         return s3_obj.get()['Body'].read().decode('utf-8')
 
 
-
-    # TODO: Do we need to remove the processed files from S3???
-    def update_s3_file(self):
+    # TODO: Update s3 file status with processed/not processed
+    def check_s3_file(self):
         """
 
         :return:
@@ -74,22 +82,18 @@ class indexer(object):
         pass
 
 
-
-    def inverted_index(self):
+    def build_mongo_connection(self):
         """
+        Set up connection with MongoDB.
 
-        :return:
+        :return: The setup client and DB from MongoDB
         """
+        print("[INFO] Setting up connection of MongoDB.")
 
-        pass
+        client = MongoClient(self.mongo_host, self.mongo_port)
+        db = client[self.db_name]
 
-
-    def save_to_mongo(self):
-        """
-
-        :return:
-        """
-        pass
+        return client, db
 
 
 
@@ -170,7 +174,49 @@ class indexer(object):
                 if self.debug:
                     print (word, lemmatizer.lemmatize(word, pos="v"))
 
+        if self.debug:
+            print(result_list)
+
         return result_list
+
+
+    def create_inverted_index(self, text):
+        """
+        Create inverted index for the processed text.
+
+        :return: inverted index
+        """
+
+
+
+        index = defaultdict(list)
+
+        for i, tokens in enumerate(text):
+            for token in tokens:
+                # if self.debug:
+                #     print(token)
+
+                index[token].append(i)
+
+
+        # if self.debug:
+        #     print(index)
+
+        return index
+
+
+    def save_to_mongo(self, database, data):
+        """
+        Save inverted index into MongoDB.
+
+        :return: N/A
+        """
+
+        posts = database.posts
+        result = posts.insert_one(data)
+
+        print('One post: {0}'.format(result.inserted_id))
+
 
 
 ###############################################
@@ -186,9 +232,20 @@ if __name__ == '__main__':
     print("[INFO] Start text processing")
     result_list = bingo_indexer.text_processing(s3_key_list=s3_doc_key_list)
 
-    # TODO: Inverted Index
+    print("[INFO] Creating inverted index (TODO)")
+    index = bingo_indexer.create_inverted_index(text=result_list)
 
-    # TODO: Save inverted index to MongoDB
+    print("[INFO] Creating MongoDB.")
+    mongo_client, mongo_db = bingo_indexer.build_mongo_connection()
+
+    print("[INFO] Saving inverted index into MongoDB.")
+    bingo_indexer.save_to_mongo(database=mongo_db, data=index)
+
+    # Retrieve the data for debugging
+    if bingo_indexer.debug:
+        pass
+
+
 
 
 
