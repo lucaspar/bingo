@@ -34,11 +34,11 @@ class indexer(object):
 
         # Set other parameters
         self.debug = True
-        self.nb_test_doc = 1
+        self.nb_test_doc = 3
 
         # MongoDB set up
         self.mongo_host = 'localhost'
-        self.mongo_port = 12345
+        self.mongo_port = 27017
         self.db_name = 'inverted_index'
 
 
@@ -101,7 +101,7 @@ class indexer(object):
         """
         s3_key_list: The keys from S3 bucket.
 
-        :return:
+        :return: processed text/word list
         """
 
         if self.debug:
@@ -112,7 +112,12 @@ class indexer(object):
             print("[INFO] Processing all the files in S3 bucket.")
             nb_doc = len(s3_doc_key_list)
 
+        result_list = []
+
         for i in range(nb_doc):
+            print("*"*50)
+            print("[INFO] Processing one file...")
+
             # Get the keys for the files.
             if self.debug:
                 file_key = s3_key_list[random.choice(range(len(s3_key_list)))]
@@ -146,7 +151,7 @@ class indexer(object):
             filtered_list = [word for word in word_list if word not in stopwords.words('english')]
 
             if self.debug:
-                print(st_lower[:200])
+                # print(st_lower[:200])
                 print("[Debug Info] Number of words in original document: %d " % len(word_list))
                 print("[Debug Info] Number of words after removing stop words: %d" % len(filtered_list))
 
@@ -157,25 +162,39 @@ class indexer(object):
             for word in filtered_list:
                 stem_list.append(stem.stem(word))
 
-            if self.debug:
-                print("[Debug info] Words after stemming:")
-                for word in stem_list:
-                    print(word)
+            # if self.debug:
+            #     print("[Debug info] Words after stemming:")
+            #     for word in stem_list:
+            #         print(word)
 
 
             # Lemmatization
             # TODO: How to choose the pos for different words??
-            result_list = []
+            one_result_list = []
 
             lemmatizer = WordNetLemmatizer()
-            for word in stem_list:
-                result_list.append(lemmatizer.lemmatize(word, pos="v"))
 
-                if self.debug:
-                    print (word, lemmatizer.lemmatize(word, pos="v"))
+            for word in stem_list:
+                one_result_list.append(lemmatizer.lemmatize(word, pos="v"))
+
+                # if self.debug:
+                #     print (word, lemmatizer.lemmatize(word, pos="v"))
+
+            # Remove the duplications in a file before appending
+            new_list = list(set(one_result_list))
+
+            if self.debug:
+                print("[Debug Info] Originally %d words in this file." % len(one_result_list))
+                print("[Debug Info] After de-duplication there are %d words in this file." % len(new_list))
+
+            result_list.append(new_list)
 
         if self.debug:
-            print(result_list)
+            print("%" * 50)
+            print("[Debug Info] There are %d files processed" % len(result_list))
+            for i, item in enumerate (result_list):
+                print("[Debug Info] Number of words in file %d is %d." % (i+1, len(item)))
+            print("%" * 50)
 
         return result_list
 
@@ -186,21 +205,14 @@ class indexer(object):
 
         :return: inverted index
         """
-
-
-
         index = defaultdict(list)
 
         for i, tokens in enumerate(text):
             for token in tokens:
-                # if self.debug:
-                #     print(token)
-
                 index[token].append(i)
 
-
-        # if self.debug:
-        #     print(index)
+        if self.debug:
+            print(index)
 
         return index
 
@@ -232,7 +244,7 @@ if __name__ == '__main__':
     print("[INFO] Start text processing")
     result_list = bingo_indexer.text_processing(s3_key_list=s3_doc_key_list)
 
-    print("[INFO] Creating inverted index (TODO)")
+    print("[INFO] Creating inverted index")
     index = bingo_indexer.create_inverted_index(text=result_list)
 
     print("[INFO] Creating MongoDB.")
