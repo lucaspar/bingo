@@ -9,6 +9,7 @@ import ast
 import random
 import threading
 import time
+import struct
 
 
 
@@ -16,7 +17,7 @@ class domain_balancer(object):
     def __init__(self):
         self.nb_crawler = 1
         self.nb_urls_init = 1
-        self.receive_size = 1024
+        self.receive_size = 4
         self.thresh_url = 0
 
         self.PORT = 23456
@@ -158,7 +159,9 @@ class domain_balancer(object):
                # Get the size of data and send it to the crawler.
                print("Sending the size of data")
                # print(str(len(url_list)).encode())
-               conn.sendall(str(len(url_list)).encode())
+               # conn.sendall(str(len(url_list)).encode())
+               print(len(url_list))
+               conn.sendall(struct.pack('>I', len(url_list)))
 
                # Then send the URL to the crawler
                print("Sending the URL...")
@@ -169,7 +172,8 @@ class domain_balancer(object):
                    # Receive the size of the data first
                    print("Receiving the size of the crawler data.")
                    data_size_str = conn.recv(self.receive_size)
-                   data_size = int(data_size_str)
+                   # data_size = int(data_size_str)
+                   data_size = struct.unpack('>I', data_size_str)[0]
                    print("Metadata size:")
                    print(data_size)
 
@@ -185,6 +189,21 @@ class domain_balancer(object):
                    # Compare the data with that in Redis and decide whether to save
                    print("Saving metadata into Redis database...")
                    self.check_redis_and_save_data(conn=self.redis_conn, data=metadata)
+
+                   print("Receiving the size of the crawler new urls.")
+                   data_size_str = conn.recv(self.receive_size)
+                   data_size = struct.unpack('>I', data_size_str)[0]
+                   # data_size = int(data_size_str)
+                   print("Urls size:")
+                   print(data_size)
+
+                   # Receive the metadata and decode
+                   total_data = conn.recv(data_size)
+                   str_new_urls_decode = total_data.decode()
+
+                   print('THE URLS')
+                   print(str_new_urls_decode)
+                   print()
 
                except Exception as e:
                    print(str(e))
