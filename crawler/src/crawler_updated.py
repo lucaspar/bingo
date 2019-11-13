@@ -26,68 +26,7 @@ HOSTNAME = '127.0.0.1'
 receive_size = 4
 
 url_list = []
-'''
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-    sock.connect((HOSTNAME, PORT))
 
-    while True:
-        try:
-            # recv the size (number of bytes) of the payload
-            data = sock.recv(receive_size)
-            # ack the size of the payload
-            #sock.sendall(data)
-
-            # receive the url using the size of the payload
-            url = sock.recv(int(data.decode()))
-            # ack the url
-            #sock.sendall(url)
-
-            # decode from bytestream to string, then append to url_list
-            # swap comments if using url_list instead of one at a time
-            #url_list += url.decode()
-            url_list.append(url.decode())
-
-            print(data, url.decode())
-            print(url_list)
-            # TODO: termination condition
-            break  # TODO
-            # as is, this will continue to go forever
-
-        except Exception as e:
-            print(str(e))
-'''
-#uncomment for comm 
-'''
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.connect((HOSTNAME, PORT))
-
-while True:
-    try:
-        # recv the size (number of bytes) of the payload
-        data = sock.recv(receive_size)
-        # ack the size of the payload
-        #sock.sendall(data)
-
-        # receive the url using the size of the payload
-        url = sock.recv(int(data.decode()))
-        # ack the url
-        #sock.sendall(url)
-
-        # decode from bytestream to string, then append to url_list
-        # swap comments if using url_list instead of one at a time
-        #url_list += url.decode()
-        url_list.append(url.decode())
-
-        print(data, url.decode())
-        print(url_list)
-        # TODO: termination condition
-        break  # TODO
-        # as is, this will continue to go forever
-
-    except Exception as e:
-        print(str(e))
-
-'''
 def store_in_s3(bucket, file_name, data):
     '''
     Creates a new object in S3
@@ -346,7 +285,7 @@ if __name__ == "__main__":
             sock.sendall(struct.pack('>I', len(new_urls_data)))
             # TODO: send metadata to balancer
             print("sending the new urls")
-            sock.sendall(new_urls_data.encode())  # uncomment for comm
+            sock.sendall(new_urls_data.encode())  
 
             print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
                 .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
