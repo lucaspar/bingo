@@ -115,6 +115,13 @@ def make_dict(url, err):
         'timestamp': time.time(),
     }
 
+def make_new_url_dict(url):
+    return {
+        'url': url,
+        'status': "000",
+        'timestamp': "000",
+    }
+
 def get_robots_txt_url(url):
     # https://stackoverflow.com/questions/9626535/get-protocol-host-name-from-url
     parsed_uri = urlparse(url)
@@ -322,6 +329,7 @@ if __name__ == "__main__":
 
                     if domain not in blacklisted_domains:
                         new_urls.append(absolute)  # TODO
+                        new_urls.append(make_new_url_dict(url)) # dictionary item for new urls 
 
             # create a JSON object to send metadata to balancer
             balancer_data = json.dumps(balancer_metadata)
