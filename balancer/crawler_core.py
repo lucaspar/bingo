@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 import time
 import struct
 import traceback
+import sys
 
 # Sophia : Code establish communication between client and server to request and send URLS
 PORT = 23456
@@ -26,57 +27,6 @@ HOSTNAME = '127.0.0.1'
 receive_size = 4
 
 url_list = []
-'''
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-    sock.connect((HOSTNAME, PORT))
-    while True:
-        try:
-            # recv the size (number of bytes) of the payload
-            data = sock.recv(receive_size)
-            # ack the size of the payload
-            #sock.sendall(data)
-            # receive the url using the size of the payload
-            url = sock.recv(int(data.decode()))
-            # ack the url
-            #sock.sendall(url)
-            # decode from bytestream to string, then append to url_list
-            # swap comments if using url_list instead of one at a time
-            #url_list += url.decode()
-            url_list.append(url.decode())
-            print(data, url.decode())
-            print(url_list)
-            # TODO: termination condition
-            break  # TODO
-            # as is, this will continue to go forever
-        except Exception as e:
-            print(str(e))
-'''
-# uncomment for comm
-'''
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.connect((HOSTNAME, PORT))
-while True:
-    try:
-        # recv the size (number of bytes) of the payload
-        data = sock.recv(receive_size)
-        # ack the size of the payload
-        #sock.sendall(data)
-        # receive the url using the size of the payload
-        url = sock.recv(int(data.decode()))
-        # ack the url
-        #sock.sendall(url)
-        # decode from bytestream to string, then append to url_list
-        # swap comments if using url_list instead of one at a time
-        #url_list += url.decode()
-        url_list.append(url.decode())
-        print(data, url.decode())
-        print(url_list)
-        # TODO: termination condition
-        break  # TODO
-        # as is, this will continue to go forever
-    except Exception as e:
-        print(str(e))
-'''
 
 
 def store_in_s3(bucket, file_name, data):
@@ -99,9 +49,8 @@ def store_in_s3(bucket, file_name, data):
     return bool(res)
 
 
-def make_dict(url, err):
+def make_dict(err):
     return {
-        'url': url,
         'status': err,
         'timestamp': time.time(),
     }
@@ -124,7 +73,6 @@ if __name__ == "__main__":
     foreign_urls = set()
     # broken_urls = set()
     local_urls = set()
-    balancer_metadata = []
     rp = urllib.robotparser.RobotFileParser()
     # Trick rp library - fake an access to robots.txt from their POV
     rp.last_checked = True
@@ -162,7 +110,10 @@ if __name__ == "__main__":
     SOCKET_TIMEOUT_SECONDS = 3
 
     while True:
-        url_list = []
+        url_list = []  # from balancer
+        new_urls = []  # for balancer
+        balancer_metadata = {}  # metadata for balancer (including new_urls)
+
         while len(url_list) < URL_LIST_THRESHOLD:
             try:
                 # https://stackoverflow.com/questions/2719017/how-to-set-timeout-on-pythons-socket-recv-method
@@ -175,9 +126,9 @@ if __name__ == "__main__":
                     # Maybe
                     # https://stackoverflow.com/questions/17667903/python-socket-receive-large-amount-of-data
                     data = sock.recv(receive_size)
-                    print(data)
+                    # print(data)
                     data = struct.unpack('>I', data)[0]
-                    print(data)
+                    # print(data)
                 else:
                     print('Socket timeout')
                     break
@@ -197,8 +148,8 @@ if __name__ == "__main__":
                 # url_list += url.decode()
                 url_list.append(url.decode())
 
-                print(data, url.decode())
-                print(url_list)
+                # print(data, url.decode())
+                # print(url_list)
                 # TODO: termination condition
                 # break  # TODO
                 # as is, this will continue to go forever
@@ -244,13 +195,13 @@ if __name__ == "__main__":
                 soup = BeautifulSoup(response.text, "lxml")
                 # Hash the URL using SHA1 algorithm, use as file name
                 url_hash = hashlib.sha1(url.encode()).hexdigest()
-                store_in_s3(bucket_name, url_hash, soup.prettify().encode('utf-8'))
-                balancer_metadata.append(make_dict(url, response.status_code))  # sending successful crawls as well
+                # store_in_s3(bucket_name, url_hash, soup.prettify().encode('utf-8'))
+                balancer_metadata[url] = make_dict(response.status_code)  # sending successful crawls as well
 
             # catch http request errors
             except requests.exceptions.HTTPError as err:
                 # Create dictionary with url, error and timestamp
-                balancer_metadata.append(make_dict(url, err.response.status_code))
+                balancer_metadata[url] = make_dict(err.response.status_code)
                 # broken_urls.add(url)
                 continue
 
@@ -264,9 +215,6 @@ if __name__ == "__main__":
             url_parts = urlsplit(url)
             base_url = "{0.scheme}://{0.netloc}".format(url_parts)
             path = url[:url.rfind('/') + 1] if '/' in url_parts.path else url
-
-            # TODO: GIVE THIS SHIT TO JIN SOMEHOW
-            new_urls = []
 
             for link in soup.find_all('a'):
 
@@ -304,7 +252,7 @@ if __name__ == "__main__":
 
                 # check if new url has never been seen or blacklisted
                 # if (absolute not in new_urls) and \
-                if (absolute not in url_list) and \
+                if (absolute not in new_urls) and \
                         (absolute not in processed_urls) and \
                         (absolute not in blacklisted_urls):
 
@@ -314,23 +262,27 @@ if __name__ == "__main__":
                     if domain not in blacklisted_domains:
                         new_urls.append(absolute)  # TODO
 
-            # create a JSON object to send metadata to balancer
-            balancer_data = json.dumps(balancer_metadata)
-            # Get the size of the metdata and send to the balancer
-            print("sending the size of the metadata")
-            # sock.sendall(str(len(balancer_data)).encode())  # uncomment for comm
-            # TODO: What if `balancer_data` contains unicode???
-            sock.sendall(struct.pack('>I', len(balancer_data)))
-            # TODO: send metadata to balancer
-            print("sending the metadata")
-            sock.sendall(balancer_data.encode())  # uncomment for comm
+        # create a JSON object to send metadata to balancer
+        balancer_metadata['new_urls'] = new_urls
+        balancer_data = json.dumps(balancer_metadata)
+        print("[INFO] This are the balancer_data")
+        print(balancer_data)
+        # sys.exit()
+        # Get the size of the metdata and send to the balancer
+        print("sending the size of the metadata")
+        # sock.sendall(str(len(balancer_data)).encode())  # uncomment for comm
+        # TODO: What if `balancer_data` contains unicode???
+        sock.sendall(struct.pack('>I', len(balancer_data)))
+        # TODO: send metadata to balancer
+        print("sending the metadata")
+        sock.sendall(balancer_data.encode())  # uncomment for comm
 
-            new_urls_data = json.dumps(new_urls)
-            sock.sendall(struct.pack('>I', len(new_urls_data)))
-            # TODO: send metadata to balancer
-            print("sending the new urls")
-            sock.sendall(new_urls_data.encode())  # uncomment for comm
+#             new_urls_data = json.dumps(new_urls)
+#             sock.sendall(struct.pack('>I', len(new_urls_data)))
+#             # TODO: send metadata to balancer
+#             print("sending the new urls")
+#             sock.sendall(new_urls_data.encode())
 
-            print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"
-                  .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
+#             print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
+#                 .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
 # sock.close() #uncomment for comm

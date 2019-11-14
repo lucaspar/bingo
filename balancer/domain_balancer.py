@@ -15,7 +15,7 @@ import struct
 
 class domain_balancer(object):
     def __init__(self):
-        self.nb_crawler = 1
+        self.nb_crawler = 2
         self.nb_urls_init = 1
         self.receive_size = 4
         self.thresh_url = 0
@@ -25,6 +25,20 @@ class domain_balancer(object):
         self.redis_conn = redis.Redis('localhost')
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
+        self.test_url_data = {"https://redis.io/commands/hmset": {"status": 200, "timestamp": 1573751911.488558},
+                              "new_urls": ["https://redis.io/", "https://redis.io/commands", "https://redis.io/clients",
+                                           "https://redis.io/documentation", "https://redis.io/community",
+                                           "https://redis.io/download", "https://redis.io/modules", "https://redis.io/support",
+                                           "https://redis.io/commands/hset", "https://redis.io/commands/#return-value",
+                                           "https://redis.io/topics/protocol#simple-string-reply", "https://redis.io/commands/#examples",
+                                           "https://redis.io/commands/hdel", "https://redis.io/commands/hexists", "https://redis.io/commands/hget",
+                                           "https://redis.io/commands/hgetall", "https://redis.io/commands/hincrby",
+                                           "https://redis.io/commands/hincrbyfloat", "https://redis.io/commands/hkeys",
+                                           "https://redis.io/commands/hlen", "https://redis.io/commands/hmget", "https://redis.io/commands/hscan",
+                                           "https://redis.io/commands/hsetnx", "https://redis.io/commands/hstrlen",
+                                           "https://redis.io/commands/hvals", "https://github.com/antirez/redis-io",
+                                           "https://redis.io/topics/sponsors", "https://redislabs.com/"]}
+
     def tmp_create_domain(self):
         """
         A tmp function, just make some initial domains and save them into redis
@@ -33,6 +47,7 @@ class domain_balancer(object):
         """
 
         # Create domain list
+        # TODO: we will need more initial domains in the future!!!
         init_domain = {
             "https://www.wikipedia.org": {"status": "000", "timestamp": "000"},
             "https://www.nd.edu": {"status": "000", "timestamp": "000"},
@@ -48,16 +63,29 @@ class domain_balancer(object):
 
     def process_metadata_str(self, metadata_str):
         """
+        Process the metadata from the crawler:
+            For the processed URLs: Remove the duplications
+            For the new URLs: Generate the metadata and save into redis
+
         :parameter
             metadata_str: the decoded metadata received from the crawler
+
         :return:
             A metadata dictionary after de-duplication.
         """
         result = {}
 
         for key, value in metadata_str.items():
-            if value not in result.values():
-                result[key] = value
+            # Deal with the new URLs
+            if key == "new_urls":
+                # Assign the empty status and time stamp for the new urls
+                for url in value:
+                    result[url] = {"status": "000", "timestamp": "000"}
+
+            # Deal with the processed URLs
+            else:
+                if value not in result.values():
+                    result[key] = value
 
         return result
 
@@ -68,9 +96,11 @@ class domain_balancer(object):
 
         :parameter:
             data: de-duplicated metadata
+
         :return:
             N/A
         """
+
         for key in data:
             value = data.get(key, {})
 
@@ -80,10 +110,13 @@ class domain_balancer(object):
             else:
                 conn.hmset(key, value)
 
+
+
     def get_socket_listen(self):
         """
+        Socket listening.
 
-        :return:
+        :return: NA
         """
         # Socket connection: balancer starts to listen
         server_address = (self.HOSTNAME, self.PORT)
@@ -95,8 +128,9 @@ class domain_balancer(object):
 
     def get_socket_acceptance(self):
         """
+        Socket accepting.
 
-        :return:
+        :return: NA
         """
 
         # Socket connection: balancer accepts
@@ -106,8 +140,9 @@ class domain_balancer(object):
         return connection, client_address
 
 
-    def get_balanced_urls(self):
+    def get_balanced_urls(self, url_data):
         """
+        Balancing the domains and distribute them to the crawlers.
 
         :return:
         """
@@ -130,12 +165,14 @@ class domain_balancer(object):
 
         return balanced_urls
 
+
     def get_one_url_for_test(self):
         """
         A test function, only get one random URL for testing.
         :return:
         """
         return(self.redis_conn.randomkey())
+
 
 
     def create_one_thread(self, conn, add):
@@ -180,30 +217,36 @@ class domain_balancer(object):
                    # Receive the metadata and decode
                    total_data = conn.recv(data_size)
                    str_metadata_decode = total_data.decode()
-                   # print(str_metadata_decode)
+                   print("!!!! Checking the received metadata.")
+                   print(str_metadata_decode)
 
                    # Organize the raw data received and deduplicate
                    print("Processing data and remove duplicates...")
                    metadata = self.process_metadata_str(ast.literal_eval(str_metadata_decode))
+                   print("!!!! Checking the processed data")
+                   print(metadata)
 
                    # Compare the data with that in Redis and decide whether to save
                    print("Saving metadata into Redis database...")
                    self.check_redis_and_save_data(conn=self.redis_conn, data=metadata)
+                   print()
 
+                   """
                    print("Receiving the size of the crawler new urls.")
                    data_size_str = conn.recv(self.receive_size)
                    data_size = struct.unpack('>I', data_size_str)[0]
                    # data_size = int(data_size_str)
-                   print("Urls size:")
+                   print("URL size:")
                    print(data_size)
+                   
 
                    # Receive the metadata and decode
                    total_data = conn.recv(data_size)
                    str_new_urls_decode = total_data.decode()
 
-                   print('THE URLS')
+                   print("!!! THE URLS")
                    print(str_new_urls_decode)
-                   print()
+                   """
 
                except Exception as e:
                    print(str(e))
@@ -212,8 +255,7 @@ class domain_balancer(object):
 
        except Exception as e:
            print(str(e))
-           conn.close()
-           # pass
+           conn.close(),
 
 
 
