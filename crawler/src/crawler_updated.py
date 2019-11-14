@@ -281,12 +281,12 @@ if __name__ == "__main__":
             print("sending the metadata")
             sock.sendall(balancer_data.encode())  # uncomment for comm
 
-            new_urls_data = json.dumps(new_urls)
-            sock.sendall(struct.pack('>I', len(new_urls_data)))
+            # new_urls_data = json.dumps(new_urls)
+            # sock.sendall(struct.pack('>I', len(new_urls_data)))
             # TODO: send metadata to balancer
-            print("sending the new urls")
-            sock.sendall(new_urls_data.encode())  
+            # print("sending the new urls")
+            # sock.sendall(new_urls_data.encode())  
 
-            print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
-                .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
+            # print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
+                # .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
 # sock.close() #uncomment for comm
