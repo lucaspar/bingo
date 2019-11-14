@@ -265,6 +265,7 @@ if __name__ == "__main__":
             # create a JSON object to send metadata to balancer
             balancer_metadata['new_urls'] = new_urls
             balancer_data = json.dumps(balancer_metadata)
+            print(balancer_data)
             # Get the size of the metdata and send to the balancer
             print("sending the size of the metadata") 
             # sock.sendall(str(len(balancer_data)).encode())  # uncomment for comm
