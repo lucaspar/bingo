@@ -47,19 +47,14 @@ def store_in_s3(bucket, file_name, data):
     return bool(res)
     
     
-def make_dict(url, err):
+def make_dict(url, err, new_urls):
     return {
         'url': url,
         'status': err,
         'timestamp': time.time(),
+        'new_urls': new_urls,
     }
 
-def make_new_url_dict(url):
-    return {
-        'url': url,
-        'status': "000",
-        'timestamp': "000",
-    }
 
 def get_robots_txt_url(url):
     # https://stackoverflow.com/questions/9626535/get-protocol-host-name-from-url
@@ -193,35 +188,13 @@ if __name__ == "__main__":
                         pass  # Can fetch
                     else:
                         continue  # Cannot fetch
-                # TODO: What metadata should be sent to the balancer if website is good and robots says we cant scrape to avoid resending?
                 response = bp.request(url).next()
                 response.raise_for_status()
                 soup = BeautifulSoup(response.text, "lxml")
                 # Hash the URL using SHA1 algorithm, use as file name
                 url_hash = hashlib.sha1(url.encode()).hexdigest()
                 store_in_s3(bucket_name, url_hash, soup.prettify().encode('utf-8'))
-                balancer_metadata.append(make_dict(url, response.status_code)) # sending successful crawls as well
-
-            # catch http request errors
-            except requests.exceptions.HTTPError as err:
-                # Create dictionary with url, error and timestamp
-                balancer_metadata.append(make_dict(url, err.response.status_code))
-                # broken_urls.add(url)
-                continue
-
-            # some other unknown error
-            except Exception as err:
-                # print(err)
-                print(traceback.format_exc())
-                continue
-
-            # split url into parts
-            url_parts = urlsplit(url)
-            base_url = "{0.scheme}://{0.netloc}".format(url_parts)
-            path = url[:url.rfind('/') + 1] if '/' in url_parts.path else url
-
-            # TODO: GIVE THIS SHIT TO JIN SOMEHOW
-            new_urls = []
+                new_urls = []
 
             for link in soup.find_all('a'):
 
@@ -268,7 +241,26 @@ if __name__ == "__main__":
 
                     if domain not in blacklisted_domains:
                         new_urls.append(absolute)  # TODO
-                        new_urls.append(make_new_url_dict(url)) # dictionary item for new urls 
+       
+                balancer_metadata.append(make_dict(url, response.status_code, new_urls)) # sending successful crawls as well
+
+            # catch http request errors
+            except requests.exceptions.HTTPError as err:
+                # Create dictionary with url, error and timestamp
+                balancer_metadata.append(make_dict(url, err.response.status_code, new_urls))
+                # broken_urls.add(url)
+                continue
+
+            # some other unknown error
+            except Exception as err:
+                # print(err)
+                print(traceback.format_exc())
+                continue
+
+            # split url into parts
+            url_parts = urlsplit(url)
+            base_url = "{0.scheme}://{0.netloc}".format(url_parts)
+            path = url[:url.rfind('/') + 1] if '/' in url_parts.path else url
 
             # create a JSON object to send metadata to balancer
             balancer_data = json.dumps(balancer_metadata)
