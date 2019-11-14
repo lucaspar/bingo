@@ -50,9 +50,8 @@ def store_in_s3(bucket, file_name, data):
 def make_dict(err):
     return {
         'status': err,
-        'timestamp': time.time(), 
+        'timestamp': time.time(),
     }
-
 
 def get_robots_txt_url(url):
     # https://stackoverflow.com/questions/9626535/get-protocol-host-name-from-url
@@ -110,7 +109,7 @@ if __name__ == "__main__":
 
     while True:
         url_list = []
-        balancer_metadata = {} 
+        balancer_metadata = {}
         while len(url_list) < URL_LIST_THRESHOLD:
             try:
                 # https://stackoverflow.com/questions/2719017/how-to-set-timeout-on-pythons-socket-recv-method
@@ -186,13 +185,35 @@ if __name__ == "__main__":
                         pass  # Can fetch
                     else:
                         continue  # Cannot fetch
+                # TODO: What metadata should be sent to the balancer if website is good and robots says we cant scrape to avoid resending?
                 response = bp.request(url).next()
                 response.raise_for_status()
                 soup = BeautifulSoup(response.text, "lxml")
                 # Hash the URL using SHA1 algorithm, use as file name
                 url_hash = hashlib.sha1(url.encode()).hexdigest()
                 store_in_s3(bucket_name, url_hash, soup.prettify().encode('utf-8'))
-                new_urls = []
+                balancer_metadata[url] = make_dict(response.status_code) # sending successful crawls as well
+
+            # catch http request errors
+            except requests.exceptions.HTTPError as err:
+                # Create dictionary with url, error and timestamp
+                balancer_metadata[url] = make_dict(err.response.status_code)
+                # broken_urls.add(url)
+                continue
+
+            # some other unknown error
+            except Exception as err:
+                # print(err)
+                print(traceback.format_exc())
+                continue
+
+            # split url into parts
+            url_parts = urlsplit(url)
+            base_url = "{0.scheme}://{0.netloc}".format(url_parts)
+            path = url[:url.rfind('/') + 1] if '/' in url_parts.path else url
+
+            # TODO: GIVE THIS SHIT TO JIN SOMEHOW
+            new_urls = []
 
             for link in soup.find_all('a'):
 
@@ -239,26 +260,7 @@ if __name__ == "__main__":
 
                     if domain not in blacklisted_domains:
                         new_urls.append(absolute)  # TODO
-       
-                balancer_metadata[url] = make_dict(response.status_code) # sending successful crawls as well
-
-            # catch http request errors
-            except requests.exceptions.HTTPError as err:
-                # Create dictionary with url, error and timestamp
-                balancer_metadata[url] = make_dict(err.response.status_code)
-                # broken_urls.add(url)
-                continue
-
-            # some other unknown error
-            except Exception as err:
-                # print(err)
-                print(traceback.format_exc())
-                continue
-
-            # split url into parts
-            url_parts = urlsplit(url)
-            base_url = "{0.scheme}://{0.netloc}".format(url_parts)
-            path = url[:url.rfind('/') + 1] if '/' in url_parts.path else url
+                    
 
             # create a JSON object to send metadata to balancer
             balancer_metadata['new_urls'] = new_urls
@@ -272,12 +274,12 @@ if __name__ == "__main__":
             print("sending the metadata")
             sock.sendall(balancer_data.encode())  # uncomment for comm
 
-            # new_urls_data = json.dumps(new_urls)
-            # sock.sendall(struct.pack('>I', len(new_urls_data)))
-            # TODO: send metadata to balancer
-            # print("sending the new urls")
-            # sock.sendall(new_urls_data.encode())  
+#             new_urls_data = json.dumps(new_urls)
+#             sock.sendall(struct.pack('>I', len(new_urls_data)))
+#             # TODO: send metadata to balancer
+#             print("sending the new urls")
+#             sock.sendall(new_urls_data.encode())  
 
-            # print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
-                # .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
+#             print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
+#                 .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
 # sock.close() #uncomment for comm
