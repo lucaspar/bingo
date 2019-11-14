@@ -108,8 +108,10 @@ if __name__ == "__main__":
     SOCKET_TIMEOUT_SECONDS = 3
 
     while True:
-        url_list = []
-        balancer_metadata = {}
+        url_list = []  # from balancer
+        new_urls = []  # for balancer
+        balancer_metadata = {}  # metadata for balancer (including new_urls)
+
         while len(url_list) < URL_LIST_THRESHOLD:
             try:
                 # https://stackoverflow.com/questions/2719017/how-to-set-timeout-on-pythons-socket-recv-method
@@ -212,9 +214,6 @@ if __name__ == "__main__":
             base_url = "{0.scheme}://{0.netloc}".format(url_parts)
             path = url[:url.rfind('/') + 1] if '/' in url_parts.path else url
 
-            # TODO: GIVE THIS SHIT TO JIN SOMEHOW
-            new_urls = []
-
             for link in soup.find_all('a'):
 
                 # no hyperlink
@@ -251,7 +250,7 @@ if __name__ == "__main__":
             
                 # check if new url has never been seen or blacklisted
                 # if (absolute not in new_urls) and \
-                if (absolute not in url_list) and \
+                if (absolute not in new_urls) and \
                     (absolute not in processed_urls) and \
                     (absolute not in blacklisted_urls):
 
@@ -262,18 +261,18 @@ if __name__ == "__main__":
                         new_urls.append(absolute)  # TODO
                     
 
-            # create a JSON object to send metadata to balancer
-            balancer_metadata['new_urls'] = new_urls
-            balancer_data = json.dumps(balancer_metadata)
-            print(balancer_data)
-            # Get the size of the metdata and send to the balancer
-            print("sending the size of the metadata") 
-            # sock.sendall(str(len(balancer_data)).encode())  # uncomment for comm
-            # TODO: What if `balancer_data` contains unicode???
-            sock.sendall(struct.pack('>I', len(balancer_data)))
-            # TODO: send metadata to balancer
-            print("sending the metadata")
-            sock.sendall(balancer_data.encode())  # uncomment for comm
+        # create a JSON object to send metadata to balancer
+        balancer_metadata['new_urls'] = new_urls
+        balancer_data = json.dumps(balancer_metadata)
+        print(balancer_data)
+        # Get the size of the metdata and send to the balancer
+        print("sending the size of the metadata") 
+        # sock.sendall(str(len(balancer_data)).encode())  # uncomment for comm
+        # TODO: What if `balancer_data` contains unicode???
+        sock.sendall(struct.pack('>I', len(balancer_data)))
+        # TODO: send metadata to balancer
+        print("sending the metadata")
+        sock.sendall(balancer_data.encode())  # uncomment for comm
 
 #             new_urls_data = json.dumps(new_urls)
 #             sock.sendall(struct.pack('>I', len(new_urls_data)))

@@ -181,7 +181,7 @@ class domain_balancer(object):
                    # Receive the metadata and decode
                    total_data = conn.recv(data_size)
                    str_metadata_decode = total_data.decode()
-                   # print(str_metadata_decode)
+                   print(str_metadata_decode)
 
                    # Organize the raw data received and deduplicate
                    print("Processing data and remove duplicates...")
@@ -191,21 +191,21 @@ class domain_balancer(object):
                    # Compare the data with that in Redis and decide whether to save
                    print("Saving metadata into Redis database...")
                    # self.check_redis_and_save_data(conn=self.redis_conn, data=metadata)
-
-                   print("Receiving the size of the crawler new urls.")
-                   data_size_str = conn.recv(self.receive_size)
-                   data_size = struct.unpack('>I', data_size_str)[0]
-                   # data_size = int(data_size_str)
-                   print("Urls size:")
-                   print(data_size)
-
-                   # Receive the metadata and decode
-                   total_data = conn.recv(data_size)
-                   str_new_urls_decode = total_data.decode()
-
-                   print('THE URLS')
-                   print(str_new_urls_decode)
                    print()
+
+                #    print("Receiving the size of the crawler new urls.")
+                #    data_size_str = conn.recv(self.receive_size)
+                #    data_size = struct.unpack('>I', data_size_str)[0]
+                #    # data_size = int(data_size_str)
+                #    print("Urls size:")
+                #    print(data_size)
+
+                #    # Receive the metadata and decode
+                #    total_data = conn.recv(data_size)
+                #    str_new_urls_decode = total_data.decode()
+
+                #    print('THE URLS')
+                #    print(str_new_urls_decode)
 
                except Exception as e:
                    print(str(e))
