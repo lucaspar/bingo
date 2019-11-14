@@ -47,12 +47,10 @@ def store_in_s3(bucket, file_name, data):
     return bool(res)
     
     
-def make_dict(url, err, new_urls):
+def make_dict(err):
     return {
-        'url': url,
         'status': err,
-        'timestamp': time.time(),
-        'new_urls': new_urls,
+        'timestamp': time.time(), 
     }
 
 
@@ -73,7 +71,6 @@ if __name__ == "__main__":
     foreign_urls = set()
     # broken_urls = set()
     local_urls = set()
-    balancer_metadata = []
     rp = urllib.robotparser.RobotFileParser()
     # Trick rp library - fake an access to robots.txt from their POV
     rp.last_checked = True
@@ -113,6 +110,7 @@ if __name__ == "__main__":
 
     while True:
         url_list = []
+        balancer_metadata = {} 
         while len(url_list) < URL_LIST_THRESHOLD:
             try:
                 # https://stackoverflow.com/questions/2719017/how-to-set-timeout-on-pythons-socket-recv-method
@@ -242,12 +240,12 @@ if __name__ == "__main__":
                     if domain not in blacklisted_domains:
                         new_urls.append(absolute)  # TODO
        
-                balancer_metadata.append(make_dict(url, response.status_code, new_urls)) # sending successful crawls as well
+                balancer_metadata[url] = make_dict(response.status_code) # sending successful crawls as well
 
             # catch http request errors
             except requests.exceptions.HTTPError as err:
                 # Create dictionary with url, error and timestamp
-                balancer_metadata.append(make_dict(url, err.response.status_code, new_urls))
+                balancer_metadata[url] = make_dict(err.response.status_code)
                 # broken_urls.add(url)
                 continue
 
@@ -263,6 +261,7 @@ if __name__ == "__main__":
             path = url[:url.rfind('/') + 1] if '/' in url_parts.path else url
 
             # create a JSON object to send metadata to balancer
+            balancer_metadata['new_urls'] = new_urls
             balancer_data = json.dumps(balancer_metadata)
             # Get the size of the metdata and send to the balancer
             print("sending the size of the metadata") 
