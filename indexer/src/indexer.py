@@ -19,6 +19,9 @@ from collections import defaultdict
 from nltk.corpus import wordnet
 import nltk
 import sys
+from nltk.tokenize import sent_tokenize, word_tokenize
+from nltk.stem import PorterStemmer
+from nltk.stem import LancasterStemmer
 
 
 class indexer(object):
@@ -36,7 +39,7 @@ class indexer(object):
 
         # Set other parameters
         self.debug = True
-        self.nb_test_doc = 1
+        self.nb_test_doc = 3
         self.len_limit = 2
 
         # MongoDB set up
@@ -117,6 +120,20 @@ class indexer(object):
 
         return tag_dict.get(tag, wordnet.NOUN)
 
+    def stem_sen(self, sentence):
+        """
+
+        """
+        token_words = word_tokenize(sentence)
+        stem_sentence = []
+
+        for word in token_words:
+            stem_sentence.append(porter.stem(word))
+            stem_sentence.append(" ")
+
+
+        return "".join(stem_sentence)
+
 
 
     def text_processing(self, s3_key_list):
@@ -137,6 +154,8 @@ class indexer(object):
         result_list = []
 
         for i in range(nb_doc):
+            one_file_word_list = []
+
             print("*"*50)
             print("[INFO] Processing one file...")
 
@@ -151,74 +170,58 @@ class indexer(object):
 
             """
             Text processing:
-                Lower case, remove numbers and diacritics;
-                Remove punctuation and whitespaces
-                Tokenization
+                done, but not perfect - Stemming & Lemmartize
+                done, but not perfect - Lower case, remove numbers and diacritics;
+                done - Remove punctuation and whitespaces
+                done - Tokenization
             """
-            st = ""
 
             document = BeautifulSoup(file, features="html.parser").get_text()
+            doc_sentences = nltk.sent_tokenize(document)
+            print("Number of the sentences: %d" % len(doc_sentences))
 
-            doc_words = word_tokenize(document)
+            # Stemming & Lemmartizer for each sentence
+            wordnet_lemmatizer = WordNetLemmatizer()
+            punctuations = ")?:!.,;(;,'#$%&1234567890-=^~@+*[]{}<>/_"
 
-            for line in doc_words:
-                line = (line.rstrip())
-                print(line)
-                if line:
-                    if re.match("^[A-Za-z]*$", line):
-                        # if (line not in stop and len(line)>1):
-                        st = st + " " + line
+            for one_sentence in doc_sentences[5:10]:
+                one_sentence = one_sentence.rstrip()
+                sentence_words = nltk.word_tokenize(one_sentence)
+                # sentence_words = self.stem_sen(sentence_words)
 
-            # Remove stop words
-            st_lower = st.lower()
-            print(st_lower)
-            sys.exit(0)
+                for word in sentence_words:
+                    # All lower case
+                    word = word.lower()
+                    word = ''.join([i for i in word if not i.isdigit()])
 
-            word_list = st_lower.split(' ')
-            filtered_list = [word for word in word_list if word not in stopwords.words('english')]
+                    # Remove punctuation
+                    if word:
+                        if word in punctuations:
+                            try:
+                                sentence_words.remove(word)
+                            except ValueError:
+                                continue
 
-            if self.debug:
-                # print(st_lower[:200])
-                print("[Debug Info] Number of words in original document: %d " % len(word_list))
-                print("[Debug Info] Number of words after removing stop words: %d" % len(filtered_list))
+                # Remove the stop words
+                filtered_list = [word for word in sentence_words if word not in stopwords.words('english')]
 
-            # Stemming
-            stem_list = []
+                if self.debug:
+                    print("Number of words in original sentence: %d" % len(sentence_words))
+                    print("Number of words after removing stop words: %d" % len(filtered_list))
 
-            stem = SnowballStemmer(language='english')
-            for word in filtered_list:
-                stem_list.append(stem.stem(word))
+                # Lemmarization
+                for (i, word) in enumerate(filtered_list):
+                    sentence_words[i] = wordnet_lemmatizer.lemmatize(word, pos=self.get_wordnet_pos(word))
 
-            # Lemmatization
-            one_result_list = []
+                    # if self.debug:
+                    #     print ("{0:20}{1:20}".format(word, wordnet_lemmatizer.lemmatize(word, pos=self.get_wordnet_pos(word))))
 
-            lemmatizer = WordNetLemmatizer()
+                for word in sentence_words:
+                    one_file_word_list.append(word)
 
-            for word in stem_list:
-                # one_result_list.append(lemmatizer.lemmatize(word, pos="v"))
-                if len(word) >= self.len_limit:
-                    one_result_list.append(lemmatizer.lemmatize(word, self.get_wordnet_pos(word)))
-
-                    if self.debug:
-                        print(word, lemmatizer.lemmatize(word, self.get_wordnet_pos(word)))
-                else:
-                    continue
-
-            # Remove the duplications in a file before appending
-            new_list = list(set(one_result_list))
-
-            if self.debug:
-                print("[Debug Info] Originally %d words in this file." % len(one_result_list))
-                print("[Debug Info] After de-duplication there are %d words in this file." % len(new_list))
-
+            # Remove the duplication
+            new_list = list(set(one_file_word_list))
             result_list.append(new_list)
-
-        if self.debug:
-            print("%" * 50)
-            print("[Debug Info] There are %d files processed" % len(result_list))
-            for i, item in enumerate (result_list):
-                print("[Debug Info] Number of words in file %d is %d." % (i+1, len(item)))
-            print("%" * 50)
 
         return result_list
 
@@ -249,9 +252,14 @@ class indexer(object):
         """
 
         posts = database.posts
-        result = posts.insert_one(data)
 
-        print('One post: {0}'.format(result.inserted_id))
+        try:
+            result = posts.insert_one(data)
+            print('One post: {0}'.format(result.inserted_id))
+
+        except:
+            pass
+
 
 
 
