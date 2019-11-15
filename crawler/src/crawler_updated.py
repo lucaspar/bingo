@@ -114,6 +114,8 @@ if __name__ == "__main__":
         new_urls = []  # for balancer
         balancer_metadata = {}  # metadata for balancer (including new_urls)
 
+        try:
+
             # receive the url using the size of the payload
             # url = sock.recv(int(data.decode()))
             data = sock.recv(receive_size)
@@ -252,3 +254,5 @@ if __name__ == "__main__":
         # TODO: send metadata to balancer
         print("sending the metadata")
         sock.sendall(balancer_data.encode())  # uncomment for comm
+
+
