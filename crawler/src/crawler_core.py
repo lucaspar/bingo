@@ -223,5 +223,3 @@ if __name__ == "__main__":
         sock.sendall(struct.pack('>I', len(balancer_data)))
         print("sending the metadata")
         sock.sendall(balancer_data.encode()) 
-
-
