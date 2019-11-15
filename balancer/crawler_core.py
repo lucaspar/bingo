@@ -110,53 +110,95 @@ if __name__ == "__main__":
     SOCKET_TIMEOUT_SECONDS = 3
 
     while True:
-        url_list = []  # from balancer
+        # url_list = []  # from balancer
         new_urls = []  # for balancer
         balancer_metadata = {}  # metadata for balancer (including new_urls)
 
-        while len(url_list) < URL_LIST_THRESHOLD:
-            try:
-                # https://stackoverflow.com/questions/2719017/how-to-set-timeout-on-pythons-socket-recv-method
-                if url_list:
-                    ready = select.select([sock], [], [], SOCKET_TIMEOUT_SECONDS)[0]
-                else:
-                    ready = True
-                # recv the size (number of bytes) of the payload
-                if ready:
-                    # Maybe
-                    # https://stackoverflow.com/questions/17667903/python-socket-receive-large-amount-of-data
-                    data = sock.recv(receive_size)
-                    # print(data)
-                    data = struct.unpack('>I', data)[0]
-                    # print(data)
-                else:
-                    print('Socket timeout')
-                    break
-                # data = sock.recv(receive_size)
-                # print(data )
-                # ack the size of the payload
-                # sock.sendall(data)
+        # while len(url_list) < URL_LIST_THRESHOLD:
+        #     try:
+        #         # https://stackoverflow.com/questions/2719017/how-to-set-timeout-on-pythons-socket-recv-method
+        #         if url_list:
+        #             ready = select.select([sock], [], [], SOCKET_TIMEOUT_SECONDS)[0]
+        #         else:
+        #             ready = True
+        #         # recv the size (number of bytes) of the payload
+        #         if ready:
+        #             # Maybe
+        #             # https://stackoverflow.com/questions/17667903/python-socket-receive-large-amount-of-data
+        #             data = sock.recv(receive_size)
+        #             # print(data)
+        #             data = struct.unpack('>I', data)[0]
+        #             # print(data)
+        #         else:
+        #             print('Socket timeout')
+        #             break
+        #         # data = sock.recv(receive_size)
+        #         # print(data )
+        #         # ack the size of the payload
+        #         # sock.sendall(data)
+        #
+        #         # receive the url using the size of the payload
+        #         # url = sock.recv(int(data.decode()))
+        #         url = sock.recv(data)
+        #         # ack the url
+        #         # sock.sendall(url)
+        #
+        #         # decode from bytestream to string, then append to url_list
+        #         # swap comments if using url_list instead of one at a time
+        #         # url_list += url.decode()
+        #         url_list.append(url.decode())
+        #
+        #         # print(data, url.decode())
+        #         # print(url_list)
+        #         # TODO: termination condition
+        #         # break  # TODO
+        #         # as is, this will continue to go forever
+        #
+        #     except Exception as e:
+        #         # print(str(e))
+        #         print(traceback.format_exc())
+        # while len(url_list) < URL_LIST_THRESHOLD:
+        try:
+            # https://stackoverflow.com/questions/2719017/how-to-set-timeout-on-pythons-socket-recv-method
+            # if url_list:
+            #     ready = select.select([sock], [], [], SOCKET_TIMEOUT_SECONDS)[0]
+            # else:
+            #     ready = True
+            # # recv the size (number of bytes) of the payload
+            # if ready:
+            #     # Maybe
+            #     # https://stackoverflow.com/questions/17667903/python-socket-receive-large-amount-of-data
+            #     data = sock.recv(receive_size)
+            #     # print(data)
+            #     data = struct.unpack('>I', data)[0]
+            #     # print(data)
+            # else:
+            #     print('Socket timeout')
+            #     break
+            # data = sock.recv(receive_size)
+            # print(data )
+            # ack the size of the payload
+            # sock.sendall(data)
 
-                # receive the url using the size of the payload
-                # url = sock.recv(int(data.decode()))
-                url = sock.recv(data)
-                # ack the url
-                # sock.sendall(url)
+            # receive the url using the size of the payload
+            # url = sock.recv(int(data.decode()))
+            data = sock.recv(receive_size)
+            print(data)
+            data = struct.unpack('>I', data)[0]
+            urls = sock.recv(data)
+            # ack the url
+            # sock.sendall(url)
 
-                # decode from bytestream to string, then append to url_list
-                # swap comments if using url_list instead of one at a time
-                # url_list += url.decode()
-                url_list.append(url.decode())
+            # decode from bytestream to string, then append to url_list
+            # swap comments if using url_list instead of one at a time
+            # url_list += url.decode()
+            # url_list.append(url.decode())
+            url_list = json.loads(urls.decode())
+            print('got some urls: ' + str(url_list))
 
-                # print(data, url.decode())
-                # print(url_list)
-                # TODO: termination condition
-                # break  # TODO
-                # as is, this will continue to go forever
-
-            except Exception as e:
-                # print(str(e))
-                print(traceback.format_exc())
+        except Exception as e:
+            # print(str(e))
+            print(traceback.format_exc())
 
         # new_urls = deque(url_list)
 

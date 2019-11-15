@@ -8,9 +8,13 @@ import redis
 import ast
 import random
 import threading
-import time
 import struct
-
+from urllib.parse import urlparse
+from collections import Counter
+import sys
+import json
+import pickle
+import traceback
 
 
 class domain_balancer(object):
@@ -19,25 +23,13 @@ class domain_balancer(object):
         self.nb_urls_init = 1
         self.receive_size = 4
         self.thresh_url = 0
+        self.nb_url_increase = 0
 
         self.PORT = 23456
         self.HOSTNAME = '127.0.0.1'
         self.redis_conn = redis.Redis('localhost')
+        self.all_redis_keys = self.redis_conn.keys()
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-        self.test_url_data = {"https://redis.io/commands/hmset": {"status": 200, "timestamp": 1573751911.488558},
-                              "new_urls": ["https://redis.io/", "https://redis.io/commands", "https://redis.io/clients",
-                                           "https://redis.io/documentation", "https://redis.io/community",
-                                           "https://redis.io/download", "https://redis.io/modules", "https://redis.io/support",
-                                           "https://redis.io/commands/hset", "https://redis.io/commands/#return-value",
-                                           "https://redis.io/topics/protocol#simple-string-reply", "https://redis.io/commands/#examples",
-                                           "https://redis.io/commands/hdel", "https://redis.io/commands/hexists", "https://redis.io/commands/hget",
-                                           "https://redis.io/commands/hgetall", "https://redis.io/commands/hincrby",
-                                           "https://redis.io/commands/hincrbyfloat", "https://redis.io/commands/hkeys",
-                                           "https://redis.io/commands/hlen", "https://redis.io/commands/hmget", "https://redis.io/commands/hscan",
-                                           "https://redis.io/commands/hsetnx", "https://redis.io/commands/hstrlen",
-                                           "https://redis.io/commands/hvals", "https://github.com/antirez/redis-io",
-                                           "https://redis.io/topics/sponsors", "https://redislabs.com/"]}
 
     def tmp_create_domain(self):
         """
@@ -60,6 +52,8 @@ class domain_balancer(object):
             print(key, init_domain.get(key, {}))
 
             self.redis_conn.hmset(key, value)
+
+
 
     def process_metadata_str(self, metadata_str):
         """
@@ -89,6 +83,7 @@ class domain_balancer(object):
 
         return result
 
+
     def check_redis_and_save_data(self, conn, data):
         """
         Write URLs to the URL Map with some metadata (see below).
@@ -97,8 +92,7 @@ class domain_balancer(object):
         :parameter:
             data: de-duplicated metadata
 
-        :return:
-            N/A
+        :return: N/A
         """
 
         for key in data:
@@ -109,7 +103,6 @@ class domain_balancer(object):
                 pass
             else:
                 conn.hmset(key, value)
-
 
 
     def get_socket_listen(self):
@@ -123,7 +116,6 @@ class domain_balancer(object):
         print("Listening on {}:{}".format(self.HOSTNAME, self.PORT))
         self.sock.bind(server_address)
         self.sock.listen(1)
-
 
 
     def get_socket_acceptance(self):
@@ -140,28 +132,66 @@ class domain_balancer(object):
         return connection, client_address
 
 
-    def get_balanced_urls(self, url_data):
+    def get_balanced_urls(self):
         """
         Balancing the domains and distribute them to the crawlers.
 
-        :return:
+        :return: The balanced URLs
         """
 
         # TODO: Update the nb of URLs according to the data size in redis
-        nb_total_url = len(self.redis_conn.keys())
+        nb_total_url = len(self.all_redis_keys)
+        print("!!!!! Number of total URL is %d" % nb_total_url) # Confirmed!
 
-        # TODO: How to decide the rules for nb of URLs sending to each crawler??
+
         if nb_total_url <= self.thresh_url:
+            print("We need more URLs...")
             pass
+
         else:
-            pass
+            # TODO: How to decide the rules for nb of URLs sending to each crawler??
+            nb_url_single_crawler = self.nb_urls_init + self.nb_url_increase
 
-        # TODO: Only randomly select a portion of URLs for balancing
-        random_urls = None
 
-        # Get balanced URLs
-        # TODO: Put URL balancing function here
-        balanced_urls = None
+        domain_url_list = []
+        domain_list = []
+
+        for url in self.all_redis_keys:
+            url = url.decode()
+            parsed_uri = urlparse(url)
+            domain_result = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
+
+            # Get the list for the domains and URLs
+            domain_url_list.append((domain_result, url))
+            domain_list.append(domain_result)
+
+        # Sort them to make sure they are both in a same order
+        domain_url_list.sort()
+        domain_list.sort(key=lambda x: x[0])
+        print("Confirming the domain list...")
+        print(domain_list)
+
+        # Count the number of domains
+        counts = Counter(domain_list)
+        print("There are %d different domains." % len(counts.keys()))
+
+        # Get some URLs from each domain
+        return_key_list = []
+
+        for i in range(len(counts.keys())):
+            for n in range(nb_url_single_crawler):
+                one_random_key = domain_url_list[random.randint(0, len(domain_list)-1)]
+                return_key_list.append(one_random_key)
+                # Remove the key from redis after getting it
+                self.redis_conn.delete(one_random_key[1])
+
+        balanced_urls = []
+
+        for i in range(len(return_key_list)):
+            balanced_urls.append(return_key_list[i][1])
+
+        # print(balanced_urls)
+        # sys.exit(0)
 
         return balanced_urls
 
@@ -169,7 +199,8 @@ class domain_balancer(object):
     def get_one_url_for_test(self):
         """
         A test function, only get one random URL for testing.
-        :return:
+
+        :return: A random URL from Redis
         """
         return(self.redis_conn.randomkey())
 
@@ -185,19 +216,17 @@ class domain_balancer(object):
 
        try:
            while True:
-               # Get the URL list
-               # TODO: Use the get_balanced_urls function in the future
-               #url_list = self.get_balanced_urls()
+               # Get the URL list: Use the get_balanced_urls function
+               url_list = self.get_balanced_urls()
 
-               url_list = self.get_one_url_for_test()
-               # print("here is the url list ")
-               # print(url_list)
+               # This is for testing and debugging....
+               # url_list = self.get_one_url_for_test()
+               print("This is testing multiple URLs...")
+               print(url_list)
+               url_list = json.dumps(url_list).encode()
 
                # Get the size of data and send it to the crawler.
                print("Sending the size of data")
-               # print(str(len(url_list)).encode())
-               # conn.sendall(str(len(url_list)).encode())
-               print(len(url_list))
                conn.sendall(struct.pack('>I', len(url_list)))
 
                # Then send the URL to the crawler
@@ -209,10 +238,7 @@ class domain_balancer(object):
                    # Receive the size of the data first
                    print("Receiving the size of the crawler data.")
                    data_size_str = conn.recv(self.receive_size)
-                   # data_size = int(data_size_str)
                    data_size = struct.unpack('>I', data_size_str)[0]
-                   print("Metadata size:")
-                   print(data_size)
 
                    # Receive the metadata and decode
                    total_data = conn.recv(data_size)
@@ -231,23 +257,6 @@ class domain_balancer(object):
                    self.check_redis_and_save_data(conn=self.redis_conn, data=metadata)
                    print()
 
-                   """
-                   print("Receiving the size of the crawler new urls.")
-                   data_size_str = conn.recv(self.receive_size)
-                   data_size = struct.unpack('>I', data_size_str)[0]
-                   # data_size = int(data_size_str)
-                   print("URL size:")
-                   print(data_size)
-                   
-
-                   # Receive the metadata and decode
-                   total_data = conn.recv(data_size)
-                   str_new_urls_decode = total_data.decode()
-
-                   print("!!! THE URLS")
-                   print(str_new_urls_decode)
-                   """
-
                except Exception as e:
                    print(str(e))
                    continue
@@ -255,8 +264,8 @@ class domain_balancer(object):
 
        except Exception as e:
            print(str(e))
+           print(traceback.format_exc())
            conn.close(),
-
 
 
 
