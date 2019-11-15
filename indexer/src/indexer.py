@@ -18,6 +18,8 @@ from pymongo import MongoClient
 from collections import defaultdict
 from nltk.corpus import wordnet
 import nltk
+import sys
+
 
 class indexer(object):
     def __init__(self):
@@ -34,7 +36,7 @@ class indexer(object):
 
         # Set other parameters
         self.debug = True
-        self.nb_test_doc = 3
+        self.nb_test_doc = 1
         self.len_limit = 2
 
         # MongoDB set up
@@ -156,10 +158,12 @@ class indexer(object):
             st = ""
 
             document = BeautifulSoup(file, features="html.parser").get_text()
+
             doc_words = word_tokenize(document)
 
             for line in doc_words:
                 line = (line.rstrip())
+                print(line)
                 if line:
                     if re.match("^[A-Za-z]*$", line):
                         # if (line not in stop and len(line)>1):
@@ -167,6 +171,9 @@ class indexer(object):
 
             # Remove stop words
             st_lower = st.lower()
+            print(st_lower)
+            sys.exit(0)
+
             word_list = st_lower.split(' ')
             filtered_list = [word for word in word_list if word not in stopwords.words('english')]
 
