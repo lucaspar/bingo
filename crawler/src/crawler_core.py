@@ -101,10 +101,6 @@ if __name__ == "__main__":
 
     bp = BingoProxy(concurrency=concurrency, timeout=timeout)
 
-    # TODO: rename me
-    URL_LIST_THRESHOLD = 10
-    SOCKET_TIMEOUT_SECONDS = 3
-
     while True:
         # url_list = []  # from balancer
         new_urls = []  # for balancer
