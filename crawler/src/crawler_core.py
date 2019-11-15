@@ -75,14 +75,14 @@ if __name__ == "__main__":
     # Trick rp library - fake an access to robots.txt from their POV
     rp.last_checked = True
 
-    load blacklisted urls and domains
-    with open('../../blacklisted_urls.txt', 'r') as f:
+    # load blacklisted urls and domains
+    with open('blacklisted_urls.txt', 'r') as f:
         blacklisted_urls = set(f.read().split())
     blacklisted_urls = set()
 
     print('# of blacklisted urls:', len(blacklisted_urls))
 
-    with open('../../blacklisted_domains.txt', 'r') as f:
+    with open('blacklisted_domains.txt', 'r') as f:
         blacklisted_domains = set(f.read().split())
     blacklisted_domains = set()
 
