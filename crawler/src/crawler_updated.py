@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 import time
 import struct
 import traceback
+import sys
 
 # Sophia : Code establish communication between client and server to request and send URLS
 PORT = 23456
@@ -27,10 +28,11 @@ receive_size = 4
 
 url_list = []
 
+
 def store_in_s3(bucket, file_name, data):
     '''
     Creates a new object in S3
-    
+
      :params:
          bucket:     S3 bucket reference
          file_name:  identifier string
@@ -38,20 +40,21 @@ def store_in_s3(bucket, file_name, data):
      :return:
          list: a list of available proxies
     '''
-    
+
     s3 = boto3.resource('s3')
     obj = s3.Object(bucket, file_name)
     # res = obj.put(Body=json.dumps(data))
     res = obj.put(Body=data)
     # access more info with res['ResponseMetadata']
     return bool(res)
-    
-    
+
+
 def make_dict(err):
     return {
         'status': err,
         'timestamp': time.time(),
     }
+
 
 def get_robots_txt_url(url):
     # https://stackoverflow.com/questions/9626535/get-protocol-host-name-from-url
@@ -63,8 +66,8 @@ def get_robots_txt_url(url):
 if __name__ == "__main__":
     # url_list = ['https://en.wikipedia.org/wiki/Main_Page']
     # new_urls = deque(url_list)
-    
-    blacklisted_urls = set() # good list of blacklisted urls
+
+    blacklisted_urls = set()  # good list of blacklisted urls
     blacklisted_domains = set()
     processed_urls = set()
     foreign_urls = set()
@@ -74,9 +77,9 @@ if __name__ == "__main__":
     # Trick rp library - fake an access to robots.txt from their POV
     rp.last_checked = True
 
-     # TODO: download blacklisted URLs and domains from S3 
+    # TODO: download blacklisted URLs and domains from S3
 
-     # load blacklisted urls and domains
+    # load blacklisted urls and domains
     # with open('../../blacklisted_urls.txt', 'r') as f:
     #     blacklisted_urls = set(f.read().split())
     blacklisted_urls = set()
@@ -89,12 +92,11 @@ if __name__ == "__main__":
 
     print('# of blacklisted domains:', len(blacklisted_domains))
 
-
     # load environment variables
     load_dotenv(dotenv_path='../.env.example')
     bucket_name = os.getenv("S3_BUCKET_NAME")
     concurrency = int(os.getenv("CR_REQUESTS_CONCURRENCY", default=1))
-    timeout     = int(os.getenv("CR_REQUESTS_TIMEOUT", default=20))
+    timeout = int(os.getenv("CR_REQUESTS_TIMEOUT", default=20))
     print("Concurrency", concurrency, "Timeout", timeout)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -108,53 +110,29 @@ if __name__ == "__main__":
     SOCKET_TIMEOUT_SECONDS = 3
 
     while True:
-        url_list = []  # from balancer
+        # url_list = []  # from balancer
         new_urls = []  # for balancer
         balancer_metadata = {}  # metadata for balancer (including new_urls)
 
-        while len(url_list) < URL_LIST_THRESHOLD:
-            try:
-                # https://stackoverflow.com/questions/2719017/how-to-set-timeout-on-pythons-socket-recv-method
-                if url_list:
-                    ready = select.select([sock], [], [], SOCKET_TIMEOUT_SECONDS)[0]
-                else:
-                    ready = True
-                # recv the size (number of bytes) of the payload
-                if ready:
-                    # Maybe
-                    # https://stackoverflow.com/questions/17667903/python-socket-receive-large-amount-of-data
-                    data = sock.recv(receive_size)
-                    print(data)
-                    data = struct.unpack('>I', data)[0]
-                    print(data)
-                else:
-                    print('Socket timeout')
-                    break
-                # data = sock.recv(receive_size)
-                # print(data )
-                # ack the size of the payload
-                #sock.sendall(data)
+            # receive the url using the size of the payload
+            # url = sock.recv(int(data.decode()))
+            data = sock.recv(receive_size)
+            print(data)
+            data = struct.unpack('>I', data)[0]
+            urls = sock.recv(data)
+            # ack the url
+            # sock.sendall(url)
 
-                # receive the url using the size of the payload
-                # url = sock.recv(int(data.decode()))
-                url = sock.recv(data)
-                # ack the url
-                #sock.sendall(url)
+            # decode from bytestream to string, then append to url_list
+            # swap comments if using url_list instead of one at a time
+            # url_list += url.decode()
+            # url_list.append(url.decode())
+            url_list = json.loads(urls.decode())
+            print('got some urls: ' + str(url_list))
 
-                # decode from bytestream to string, then append to url_list
-                # swap comments if using url_list instead of one at a time
-                #url_list += url.decode()
-                url_list.append(url.decode())
-
-                print(data, url.decode())
-                print(url_list)
-                # TODO: termination condition
-                # break  # TODO
-                # as is, this will continue to go forever
-
-            except Exception as e:
-                # print(str(e))
-                print(traceback.format_exc())
+        except Exception as e:
+            # print(str(e))
+            print(traceback.format_exc())
 
         # new_urls = deque(url_list)
 
@@ -193,8 +171,8 @@ if __name__ == "__main__":
                 soup = BeautifulSoup(response.text, "lxml")
                 # Hash the URL using SHA1 algorithm, use as file name
                 url_hash = hashlib.sha1(url.encode()).hexdigest()
-                store_in_s3(bucket_name, url_hash, soup.prettify().encode('utf-8'))
-                balancer_metadata[url] = make_dict(response.status_code) # sending successful crawls as well
+                # store_in_s3(bucket_name, url_hash, soup.prettify().encode('utf-8'))
+                balancer_metadata[url] = make_dict(response.status_code)  # sending successful crawls as well
 
             # catch http request errors
             except requests.exceptions.HTTPError as err:
@@ -239,7 +217,7 @@ if __name__ == "__main__":
                 known_exten = ["html", "php", "jsp", "aspx"]
                 last_words = absolute_parts.path.split('/')[-1].split('.')
                 if absolute_parts.scheme not in known_schem or \
-                    len(last_words) > 1 and (last_words[-1] not in known_exten):
+                        len(last_words) > 1 and (last_words[-1] not in known_exten):
                     continue
 
                 # differ local and foreign urls (other domain/subdomain)
@@ -247,39 +225,30 @@ if __name__ == "__main__":
                     local_urls.add(absolute)
                 else:
                     foreign_urls.add(absolute)
-            
+
                 # check if new url has never been seen or blacklisted
                 # if (absolute not in new_urls) and \
                 if (absolute not in new_urls) and \
-                    (absolute not in processed_urls) and \
-                    (absolute not in blacklisted_urls):
+                        (absolute not in processed_urls) and \
+                        (absolute not in blacklisted_urls):
 
                     # check domain too
                     domain = urlparse(absolute).netloc
 
                     if domain not in blacklisted_domains:
                         new_urls.append(absolute)  # TODO
-                    
 
         # create a JSON object to send metadata to balancer
         balancer_metadata['new_urls'] = new_urls
         balancer_data = json.dumps(balancer_metadata)
+        print("[INFO] This are the balancer_data")
         print(balancer_data)
+        # sys.exit()
         # Get the size of the metdata and send to the balancer
-        print("sending the size of the metadata") 
+        print("sending the size of the metadata")
         # sock.sendall(str(len(balancer_data)).encode())  # uncomment for comm
         # TODO: What if `balancer_data` contains unicode???
         sock.sendall(struct.pack('>I', len(balancer_data)))
         # TODO: send metadata to balancer
         print("sending the metadata")
         sock.sendall(balancer_data.encode())  # uncomment for comm
-
-#             new_urls_data = json.dumps(new_urls)
-#             sock.sendall(struct.pack('>I', len(new_urls_data)))
-#             # TODO: send metadata to balancer
-#             print("sending the new urls")
-#             sock.sendall(new_urls_data.encode())  
-
-#             print("URLs:\t\tNew:{}\tLocal: {}\tForeign: {}\tProcessed: {}"\
-#                 .format(len(new_urls), len(local_urls), len(foreign_urls), len(processed_urls)))
-# sock.close() #uncomment for comm
