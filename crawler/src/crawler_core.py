@@ -1,32 +1,20 @@
-# Author: Sophia Abraham
-from urllib.parse import urlsplit, urljoin
+#!/usr/bin/env python
+from urllib.parse import urlsplit, urljoin, urlparse
 from bingo_proxy import BingoProxy
 from dotenv import load_dotenv
-from collections import deque
 from bs4 import BeautifulSoup
+import urllib.robotparser
+import traceback
 import requests
+import logging
+import hashlib
 import socket
-import select
+import pprint
+import struct
 import boto3
 import json
-import re
-import os
-import hashlib
-import urllib.robotparser
-from urllib.parse import urlparse
 import time
-import struct
-import traceback
-import sys
-
-# Sophia : Code establish communication between client and server to request and send URLS
-PORT = 23456
-HOSTNAME = '127.0.0.1'
-
-# receive_size = 1024
-receive_size = 4
-
-url_list = []
+import os
 
 
 def store_in_s3(bucket, file_name, data):
@@ -56,70 +44,104 @@ def make_dict(err):
     }
 
 
-def get_robots_txt_url(url):
-    # https://stackoverflow.com/questions/9626535/get-protocol-host-name-from-url
-    parsed_uri = urlparse(url)
+def get_robots_file_url(doc_url):
+    """
+    Args:
+        doc_url: an URL
+    Returns
+        URL for the robots.txt file of the doc_url's domain.
+    """
+    parsed_uri = urlparse(doc_url)
     robots_url = '{uri.scheme}://{uri.netloc}/robots.txt'.format(uri=parsed_uri)
     return robots_url
 
 
-if __name__ == "__main__":
-   
-    blacklisted_urls = set()  # good list of blacklisted urls
-    blacklisted_domains = set()
-    processed_urls = set()
-    foreign_urls = set()
-    # broken_urls = set()
-    local_urls = set()
-    rp = urllib.robotparser.RobotFileParser()
-    # Trick rp library - fake an access to robots.txt from their POV
-    rp.last_checked = True
+def get_balancer_info():
+    """
+    Returns
+        Balancer's hostname and port.
+    """
+    env = os.environ.get("ENVIRONMENT", "local")
+    host =  os.environ.get("BALANCER_HOST_AWS") if env == "aws" else \
+            os.environ.get("BALANCER_HOST_LOCAL")
+    port = int(os.environ.get("BALANCER_PORT"))
 
-    # load blacklisted urls and domains
-    with open('blacklisted_urls.txt', 'r') as f:
-        blacklisted_urls = set(f.read().split())
-    blacklisted_urls = set()
+    assert host and port, "Could not load balancer's hostname and port from environment."
 
-    print('# of blacklisted urls:', len(blacklisted_urls))
+    return host, port
+
+
+def load_blacklist():
+    """
+    Loads blacklisted domains and URLs.
+
+    Returns
+        Set of blacklisted Domains
+        Set of blacklisted URLs
+    """
 
     with open('blacklisted_domains.txt', 'r') as f:
-        blacklisted_domains = set(f.read().split())
-    blacklisted_domains = set()
+        b_domains = set(f.read().split())
 
-    print('# of blacklisted domains:', len(blacklisted_domains))
+    with open('blacklisted_urls.txt', 'r') as f:
+        b_urls = set(f.read().split())
+
+    print('Blacklisted domains and URLs: {} and {}'.format(len(b_domains), len(b_urls)))
+
+    return b_domains, b_urls
+
+
+if __name__ == "__main__":
+
 
     # load environment variables
-    load_dotenv(dotenv_path='../.env.example')
-    bucket_name = os.getenv("S3_BUCKET_NAME")
+    load_dotenv(dotenv_path='../.env')
+    # print("Loaded environment variables:\n", pprint.pformat(os.environ))
     concurrency = int(os.getenv("CR_REQUESTS_CONCURRENCY", default=1))
     timeout = int(os.getenv("CR_REQUESTS_TIMEOUT", default=20))
-    print("Concurrency", concurrency, "Timeout", timeout)
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((HOSTNAME, PORT))
-    # socket.setblocking(0)
+    # robots.txt parser
+    robot_parser = urllib.robotparser.RobotFileParser()
+    robot_parser.last_checked = True
 
+    # load blacklisted urls and domains
+    b_domains, b_urls = load_blacklist()
+
+    # connect to balancer
+    while True:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect(get_balancer_info())
+            break
+        except:
+            time.sleep(5)
+            continue
+
+    url_list = []
+    processed_urls = set()
     bp = BingoProxy(concurrency=concurrency, timeout=timeout)
 
+    # balancer loop
     while True:
-        # url_list = []  # from balancer
-        new_urls = []  # for balancer
-        balancer_metadata = {}  # metadata for balancer (including new_urls)
+
+        new_urls = []
+        balancer_metadata = {}
 
         try:
-            data = sock.recv(receive_size)
-            print(data)
-            data = struct.unpack('>I', data)[0]
-            urls = sock.recv(data)
+            # receive an integer
+            data_size = sock.recv(4)
+            print("Receiving {} bytes from balancer".format(data_size))
+            big_endian_unsigned = ">I"
+            data_size = struct.unpack(big_endian_unsigned, data_size)[0]
+            urls = sock.recv(data_size)
             url_list = json.loads(urls.decode())
             print('got some urls: ' + str(url_list))
 
         except Exception as e:
-            # print(str(e))
             print(traceback.format_exc())
 
         for url in url_list:
-            
+
             processed_urls.add(url)
             print("Processing", url)
 
@@ -127,38 +149,39 @@ if __name__ == "__main__":
             try:
 
                 try:
-                    robots_url = get_robots_txt_url(url)
+                    robots_url = get_robots_file_url(url)
                     response = bp.request(robots_url).next()
-                    rp.parse(response.text)
-                    if not rp.can_fetch('*', url):
+                    robot_parser.parse(response.text)
+                    if not robot_parser.can_fetch('*', url):
                         continue  # Cannot fetch
                     # Otherwise can fetch
+
                 except requests.exceptions.HTTPError as err:
-                    # https://github.com/python/cpython/blob/3.7/Lib/urllib/robotparser.py
-                    if err.code in (401, 403):
+                    if err.response.status_code in (401, 403):
                         continue  # Cannot fetch
-                    elif err.code >= 400 and err.code < 500:
+                    elif err.response.status_code >= 400 and err.response.status_code < 500:
                         pass  # Can fetch
                     else:
                         continue  # Cannot fetch
+
                 response = bp.request(url).next()
                 response.raise_for_status()
                 soup = BeautifulSoup(response.text, "lxml")
-                # Hash the URL using SHA1 algorithm, use as file name
-                url_hash = hashlib.sha1(url.encode()).hexdigest()
-                # store_in_s3(bucket_name, url_hash, soup.prettify().encode('utf-8'))
+
+                # store to S3 bucket if in AWS
+                if os.environ.get("ENVIRONMENT", "local") == "aws":
+                    url_hash = hashlib.sha1(url.encode()).hexdigest()
+                    store_in_s3(os.getenv("S3_BUCKET_NAME"), url_hash, soup.prettify().encode('utf-8'))
+
                 balancer_metadata[url] = make_dict(response.status_code)  # sending successful crawls as well
 
-            # catch http request errors
             except requests.exceptions.HTTPError as err:
                 # Create dictionary with url, error and timestamp
                 balancer_metadata[url] = make_dict(err.response.status_code)
                 # broken_urls.add(url)
                 continue
 
-            # some other unknown error
             except Exception as err:
-                # print(err)
                 print(traceback.format_exc())
                 continue
 
@@ -184,7 +207,7 @@ if __name__ == "__main__":
 
                 absolute_parts = urlsplit(absolute)
 
-                # Cases in which the URL will be discarded:
+                # cases in which the URL will be discarded:
                 known_schem = ["http", "https"]
                 known_exten = ["html", "php", "jsp", "aspx"]
                 last_words = absolute_parts.path.split('/')[-1].split('.')
@@ -192,22 +215,16 @@ if __name__ == "__main__":
                         len(last_words) > 1 and (last_words[-1] not in known_exten):
                     continue
 
-                # differ local and foreign urls (other domain/subdomain)
-                if url_parts.netloc == absolute_parts.netloc:
-                    local_urls.add(absolute)
-                else:
-                    foreign_urls.add(absolute)
-
                 # check if new url has never been seen or blacklisted
                 if (absolute not in new_urls) and \
                         (absolute not in processed_urls) and \
-                        (absolute not in blacklisted_urls):
+                        (absolute not in b_urls):
 
                     # check domain too
                     domain = urlparse(absolute).netloc
 
-                    if domain not in blacklisted_domains:
-                        new_urls.append(absolute)  # TODO
+                    if domain not in b_domains:
+                        new_urls.append(absolute)
 
         # create a JSON object to send metadata to balancer
         balancer_metadata['new_urls'] = new_urls
@@ -218,4 +235,4 @@ if __name__ == "__main__":
         print("sending the size of the metadata")
         sock.sendall(struct.pack('>I', len(balancer_data)))
         print("sending the metadata")
-        sock.sendall(balancer_data.encode()) 
+        sock.sendall(balancer_data.encode())
