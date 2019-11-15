@@ -64,9 +64,7 @@ def get_robots_txt_url(url):
 
 
 if __name__ == "__main__":
-    # url_list = ['https://en.wikipedia.org/wiki/Main_Page']
-    # new_urls = deque(url_list)
-
+   
     blacklisted_urls = set()  # good list of blacklisted urls
     blacklisted_domains = set()
     processed_urls = set()
@@ -77,17 +75,15 @@ if __name__ == "__main__":
     # Trick rp library - fake an access to robots.txt from their POV
     rp.last_checked = True
 
-    # TODO: download blacklisted URLs and domains from S3
-
-    # load blacklisted urls and domains
-    # with open('../../blacklisted_urls.txt', 'r') as f:
-    #     blacklisted_urls = set(f.read().split())
+    load blacklisted urls and domains
+    with open('../../blacklisted_urls.txt', 'r') as f:
+        blacklisted_urls = set(f.read().split())
     blacklisted_urls = set()
 
     print('# of blacklisted urls:', len(blacklisted_urls))
 
-    # with open('../../blacklisted_domains.txt', 'r') as f:
-    #     blacklisted_domains = set(f.read().split())
+    with open('../../blacklisted_domains.txt', 'r') as f:
+        blacklisted_domains = set(f.read().split())
     blacklisted_domains = set()
 
     print('# of blacklisted domains:', len(blacklisted_domains))
@@ -115,20 +111,10 @@ if __name__ == "__main__":
         balancer_metadata = {}  # metadata for balancer (including new_urls)
 
         try:
-
-            # receive the url using the size of the payload
-            # url = sock.recv(int(data.decode()))
             data = sock.recv(receive_size)
             print(data)
             data = struct.unpack('>I', data)[0]
             urls = sock.recv(data)
-            # ack the url
-            # sock.sendall(url)
-
-            # decode from bytestream to string, then append to url_list
-            # swap comments if using url_list instead of one at a time
-            # url_list += url.decode()
-            # url_list.append(url.decode())
             url_list = json.loads(urls.decode())
             print('got some urls: ' + str(url_list))
 
@@ -136,22 +122,14 @@ if __name__ == "__main__":
             # print(str(e))
             print(traceback.format_exc())
 
-        # new_urls = deque(url_list)
-
-        # TODO: submit found URLs to balancer; request new URLs from it.
-        # while len(new_urls):
         for url in url_list:
-
-            # remove URL from queue
-            # url = new_urls.popleft()
+            
             processed_urls.add(url)
             print("Processing", url)
 
             # setup proxy and make request
             try:
-                # bp = BingoProxy(concurrency=concurrency, timeout=timeout)
 
-                # Czech if can crawl
                 try:
                     robots_url = get_robots_txt_url(url)
                     response = bp.request(robots_url).next()
@@ -167,7 +145,6 @@ if __name__ == "__main__":
                         pass  # Can fetch
                     else:
                         continue  # Cannot fetch
-                # TODO: What metadata should be sent to the balancer if website is good and robots says we cant scrape to avoid resending?
                 response = bp.request(url).next()
                 response.raise_for_status()
                 soup = BeautifulSoup(response.text, "lxml")
@@ -212,9 +189,6 @@ if __name__ == "__main__":
                 absolute_parts = urlsplit(absolute)
 
                 # Cases in which the URL will be discarded:
-                #   If `absolute` is not a valid URL: TODO - use regex - ('^(?:[a-z]+:)?//', 'i') to see if abs or rel
-                #   If `absolute_parts.scheme` is not known (http/https)
-                #   If `absolute` has a file extension and it is not of interest
                 known_schem = ["http", "https"]
                 known_exten = ["html", "php", "jsp", "aspx"]
                 last_words = absolute_parts.path.split('/')[-1].split('.')
@@ -229,7 +203,6 @@ if __name__ == "__main__":
                     foreign_urls.add(absolute)
 
                 # check if new url has never been seen or blacklisted
-                # if (absolute not in new_urls) and \
                 if (absolute not in new_urls) and \
                         (absolute not in processed_urls) and \
                         (absolute not in blacklisted_urls):
@@ -245,14 +218,10 @@ if __name__ == "__main__":
         balancer_data = json.dumps(balancer_metadata)
         print("[INFO] This are the balancer_data")
         print(balancer_data)
-        # sys.exit()
         # Get the size of the metdata and send to the balancer
         print("sending the size of the metadata")
-        # sock.sendall(str(len(balancer_data)).encode())  # uncomment for comm
-        # TODO: What if `balancer_data` contains unicode???
         sock.sendall(struct.pack('>I', len(balancer_data)))
-        # TODO: send metadata to balancer
         print("sending the metadata")
-        sock.sendall(balancer_data.encode())  # uncomment for comm
+        sock.sendall(balancer_data.encode()) 
 
 
