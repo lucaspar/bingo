@@ -187,7 +187,8 @@ class BingoProxy(object):
         response = None
         # make the request using the proxy
         try:
-            response = requests.get(url, proxies=proxy_protocols(proxy), timeout=self._CALL_TIMEOUT, verify=False)
+            # response = requests.get(url, proxies=proxy_protocols(proxy), timeout=self._CALL_TIMEOUT, verify=False)
+            response = requests.get(url, timeout=self._CALL_TIMEOUT, verify=False)
         except requests.exceptions.ProxyError as e:
             # retry with another proxy
             if not enforce_proxy:
