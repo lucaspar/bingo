@@ -7,7 +7,7 @@ FROM base
 
 # required files
 COPY --from=builder /install /usr/local
-COPY .env poetry.lock pyproject.toml /bingo/
+COPY .env src/poetry.lock src/pyproject.toml /bingo/
 COPY src /bingo/bin
 
 # system requirements

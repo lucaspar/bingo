@@ -111,6 +111,7 @@ version = "3.0.4"
 [[package]]
 category = "main"
 description = "Cross-platform colored terminal text."
+marker = "python_version != \"2.6\" and python_version != \"3.3\" or sys_platform == \"win32\""
 name = "colorama"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
@@ -357,7 +358,7 @@ python-versions = "*"
 version = "1.11.2"
 
 [metadata]
-content-hash = "1076476d4d1b182ac80da2ec342eeffa5aacf1dbc61a380253355edb21cf94c8"
+content-hash = "dae5d5b79bdccb075d9b4c257d34866806348b73833bd4447065e303f933b5ba"
 python-versions = "^3.6"
 
 [metadata.hashes]

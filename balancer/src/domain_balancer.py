@@ -209,15 +209,6 @@ class DomainBalancer(object):
         return balanced_urls
 
 
-    def terminate(self, conn):
-        """
-        Gracefully close socket and terminate thread.
-        """
-        print(self)
-        if conn:
-            conn.close()
-
-
     def crawler_talk(self, conn):
         """
         Message exchanges between the balancer and a crawler.

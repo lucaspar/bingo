@@ -1,15 +1,10 @@
-# Author: Jin Huang
-# Initial version date: 10/08/2019
-
 """
 Useful proxy list websites
     https://www.sslproxies.org/ (100 IPs all Https, tested)
     http://spys.one/en/https-ssl-proxy/ (90 IPs which are https, NOT TESTED YET)
     https://hidemy.name/en/proxy-list/?type=hs#list (Over 2000 https, NOT TESTED YET)
     https://www.proxy-list.download/HTTPS (1500 https, NOT TESTED YET)
-
 """
-
 import os
 import time
 import random
@@ -17,10 +12,10 @@ import urllib3
 import requests
 import threading
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 from time import time as timer
 from fake_useragent import UserAgent
 from multiprocessing.pool import ThreadPool
-import os
 
 urllib3.disable_warnings()
 
@@ -187,8 +182,11 @@ class BingoProxy(object):
         response = None
         # make the request using the proxy
         try:
-            # response = requests.get(url, proxies=proxy_protocols(proxy), timeout=self._CALL_TIMEOUT, verify=False)
-            response = requests.get(url, timeout=self._CALL_TIMEOUT, verify=False)
+            TEMP_DISABLED = True
+            if TEMP_DISABLED:
+                response = requests.get(url, timeout=self._CALL_TIMEOUT, verify=False)
+            else:
+                response = requests.get(url, proxies=proxy_protocols(proxy), timeout=self._CALL_TIMEOUT, verify=False)
         except requests.exceptions.ProxyError as e:
             # retry with another proxy
             if not enforce_proxy:
@@ -261,7 +259,6 @@ class BingoProxy(object):
 if __name__ == '__main__':
 
     # load environment variables
-    from dotenv import load_dotenv
     load_dotenv(dotenv_path='../.env')
     concurrency = int(os.getenv("CR_REQUESTS_CONCURRENCY", default=1))
     timeout     = int(os.getenv("CR_REQUESTS_TIMEOUT", default=20))
