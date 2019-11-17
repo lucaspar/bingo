@@ -31,9 +31,10 @@ class Crawler(object):
 
         # load blacklisted urls and domains
         self.b_domains, self.b_urls = self._load_blacklist()
+        self.sock_balancer = None
 
         # connect to balancer
-        self.sock_balancer = self._connect_to_balancer()
+        self._restart_connection()
 
         # setup proxy
         concurrency = int(os.getenv("CR_REQUESTS_CONCURRENCY", default=1))
@@ -43,6 +44,16 @@ class Crawler(object):
         # initialize other variables
         self.url_list = []
         self.processed_urls = set()
+
+
+    def _restart_connection(self):
+        '''
+        Restarts socket connection with balancer.
+        '''
+        if self.sock_balancer:
+            self.sock_balancer.close()
+            time.sleep(5)
+        self.sock_balancer = self._connect_to_balancer()
 
 
     def _are_robots_allowed(self, url):
@@ -128,6 +139,8 @@ class Crawler(object):
         '''
 
         new_anchors = set()
+        if not soup:
+            return new_anchors
 
         # for all anchors in document
         for link in soup.find_all('a'):
@@ -181,7 +194,6 @@ class Crawler(object):
         '''
         Starts crawling.
         '''
-
         try:
 
             # crawler-balancer communication loop
@@ -212,12 +224,14 @@ class Crawler(object):
                 self.sock_balancer.sendall(data_for_balancer.encode())
 
         except:
-
             self.logger.critical(traceback.format_exc())
-            # TODO: restart crawler
+            self._restart_connection()
 
 
     def _recv_balanced_urls(self):
+        '''
+        Receives URLs from Balancer.
+        '''
 
         try:
 
@@ -235,9 +249,8 @@ class Crawler(object):
             return url_list
 
         except Exception:
-
             self.logger.critical(traceback.format_exc())
-            # TODO: restart crawler
+            self._restart_connection()
 
 
     def _connect_to_balancer(self):
@@ -251,6 +264,7 @@ class Crawler(object):
             try:
                 sock_balancer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock_balancer.connect(self._get_balancer_info())
+                self.logger.info("Connected to balancer!")
                 break
             except ConnectionRefusedError:
                 self.logger.warn("Balancer seems down. Trying again...")
@@ -277,6 +291,12 @@ class Crawler(object):
         obj = s3.Object(bucket, file_name)
         res = obj.put(Body=data)
         # access more info with res['ResponseMetadata']
+
+        if res:
+            self.logger.info("Document {} stored in S3".format(file_name))
+        else:
+            self.logger.warn("Document {} S3 storing has failed".format(file_name))
+
         return bool(res)
 
 
@@ -317,7 +337,7 @@ class Crawler(object):
         with open('blacklisted_urls.txt', 'r') as f:
             b_urls = set(f.read().split())
 
-        self.logger.info('{} blacklisted domains and {} URLs'.format(len(b_domains), len(b_urls)))
+        self.logger.info('Loaded {} blacklisted domains and {} URLs'.format(len(b_domains), len(b_urls)))
 
         return b_domains, b_urls
 
@@ -368,6 +388,16 @@ if __name__ == "__main__":
     # env vars and logging
     load_dotenv(dotenv_path='../.env')
 
-    # initializes crawler
-    crawler = Crawler()
-    crawler.start()
+    # initialize crawler and recreate it if needed
+    crawler = None
+    while True:
+        try:
+            crawler = Crawler()
+            crawler.start()
+        except KeyboardInterrupt:
+            if crawler:
+                crawler.logger.info("KEYBOARD INTERRUPT :: finishing gracefully.")
+                crawler.sock_balancer.close()
+            exit()
+        except:
+            continue

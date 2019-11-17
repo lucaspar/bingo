@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from colorlog import ColoredFormatter
 from urllib.parse import urlparse
 from collections import Counter
 from dotenv import load_dotenv
@@ -11,6 +12,7 @@ import random
 import socket
 import redis
 import json
+import time
 import ast
 import os
 
@@ -20,37 +22,71 @@ class DomainBalancer(object):
     def __init__(self):
 
         load_dotenv(dotenv_path='../.env')
-        # print("Loaded environment variables:\n", pprint.pformat(os.environ))
+        self._config_logging()
 
         self.nb_urls_init = 1
         self.nb_url_increase = 0
         self.thresh_url = 0
 
+        self.redis_conn = redis.Redis(host=os.environ.get("URL_MAP_HOST"))
+
         self.PORT = int(os.environ.get("BALANCER_PORT"))
         self.HOST = os.environ.get("BALANCER_HOST")
-        self.redis_conn = redis.Redis('localhost')
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
+        self._bootstrap_url_map()
 
-    def bootstrap_url_map(self):
+
+    def _config_logging(self, demo=False):
+        """
+        Configure logging format and handler.
+        """
+
+        # get formatting string
+        FORMAT = os.environ.get(
+            "LOGGING_FORMAT",
+            '%(log_color)s[%(asctime)s] %(module)-12s %(funcName)s(): %(message)s %(reset)s'
+        )
+
+        # set
+        LOG_LEVEL = logging.DEBUG
+        stream = logging.StreamHandler()
+        stream.setLevel(LOG_LEVEL)
+        stream.setFormatter(ColoredFormatter(FORMAT))
+
+        self.logger = logging.getLogger('main')
+        self.logger.setLevel(LOG_LEVEL)
+        self.logger.addHandler(stream)
+
+
+    def _bootstrap_url_map(self):
         """
         Save first domains to URL Map for bootstrap.
         """
 
-        # Create domain list
-        init_domain = {
-            "https://www.wikipedia.org":    {"status": "", "timestamp": ""},
-            "https://www.nd.edu":           {"status": "", "timestamp": ""},
-            "https://www.quora.com":        {"status": "", "timestamp": ""}
+        # initial URL list
+        initial_url_list = {
+            "https://en.wikipedia.org/wiki/Main_Page": {
+                "status": "",
+                "timestamp": ""
+            },
+            "https://www.nd.edu": {
+                "status": "",
+                "timestamp": ""
+            },
+            "http://cnn.com/": {
+                "status": "",
+                "timestamp": ""
+            }
         }
 
         # Save the data into redis
-        for k, v in init_domain.items():
+        for k, v in initial_url_list.items():
             self.redis_conn.hmset(k, v)
 
 
-    def process_url_metadata(self, url_meta):
+    def _process_url_metadata(self, url_meta):
         """
         Process the metadata from the crawler.
         For the processed URLs: Remove duplicates
@@ -73,7 +109,7 @@ class DomainBalancer(object):
         return result
 
 
-    def update_url_map(self, conn, data):
+    def _update_url_map(self, conn, data):
         """
         Updates URL Map with new data.
 
@@ -91,10 +127,17 @@ class DomainBalancer(object):
         """
         self.sock.bind((self.HOST, self.PORT))
         self.sock.listen(1)
-        print("Listening on {}:{}".format(self.HOST, self.PORT))
+        self.logger.debug("Listening on {}:{}".format(self.HOST, self.PORT))
 
 
-    def accept_connection(self):
+    def stop_listening(self):
+        """
+        Closes socket connection.
+        """
+        self.sock.close()
+
+
+    def _accept_connection(self):
         """
         Accepts new connection.
 
@@ -103,12 +146,12 @@ class DomainBalancer(object):
             client address
         """
         connection, client_address = self.sock.accept()
-        print("Connection accepted.")
+        self.logger.debug("Connection accepted.")
 
         return connection, client_address
 
 
-    def get_balanced_urls(self):
+    def _get_balanced_urls(self):
         """
         Balancing the domains and distribute them to the crawlers.
 
@@ -117,11 +160,12 @@ class DomainBalancer(object):
         """
 
         nb_total_url = len(self.redis_conn.keys())
-        print("URL Map has {} URLs".format(nb_total_url))
+        self.logger.debug("URL Map has {} URLs".format(nb_total_url))
 
         if nb_total_url == 0:
-            print("URL Map is empty -- nothing to balance!")
-            pass
+            self.logger.error("URL Map is empty -- nothing to balance!")
+            time.sleep(5)
+            return []
 
         else:
             # TODO: How to decide the rules for nb of URLs sending to each crawler??
@@ -146,10 +190,7 @@ class DomainBalancer(object):
 
         # Count the number of domains
         domain_count = Counter(domain_list)
-
-        print("LP: Check the value of this")
-        print(pprint.pformat(domain_count))
-        print("There are {} different domains.".format(len(domain_count.keys())))
+        self.logger.debug("There are {} different domains.".format(len(domain_count.keys())))
 
         # Get some URLs from each domain
         return_key_list = []
@@ -157,7 +198,7 @@ class DomainBalancer(object):
             for _ in range(nb_url_single_crawler):
                 one_random_key = domain_url_list[random.randint(0, len(domain_list)-1)]
                 return_key_list.append(one_random_key)
-                # Remove the key from redis after getting it
+                # Remove the key from redis after getting it (???)
                 self.redis_conn.delete(one_random_key[1])
 
         balanced_urls = []
@@ -168,6 +209,15 @@ class DomainBalancer(object):
         return balanced_urls
 
 
+    def terminate(self, conn):
+        """
+        Gracefully close socket and terminate thread.
+        """
+        print(self)
+        if conn:
+            conn.close()
+
+
     def crawler_talk(self, conn):
         """
         Message exchanges between the balancer and a crawler.
@@ -175,75 +225,72 @@ class DomainBalancer(object):
         Args:
             conn: socket opened with crawler
         """
-        print("A new thread started!")
+        self.logger.info("A new crawler has connected!")
 
-        try:
-            while True:
-                # Get the URL list: Use the get_balanced_urls function
-                url_list = self.get_balanced_urls()
+        while True:
 
-                # This is for testing and debugging....
-                print("Balanced URLs:\n{}".format(pprint.pformat(url_list)))
-                url_list = json.dumps(url_list).encode()
+            try:
 
-                # Get the size of data and send it to the crawler.
-                print("Sending the size of data")
+                # balance the url list
+                url_list = []
+                while len(url_list) < 1:
+
+                    url_list = self._get_balanced_urls()
+                    self.logger.debug("Balanced URLs:\n{}".format(pprint.pformat(url_list)))
+                    url_list = json.dumps(url_list).encode()
+
+                # send the size and the list to the crawler
+                self.logger.debug("Sending a URL list of {} bytes".format(len(url_list)))
                 conn.sendall(struct.pack('>I', len(url_list)))
-
-                # Then send the URL to the crawler
-                print("Sending the URL...")
                 conn.sendall(url_list)
 
-                # Socket connection: balancer receives metadata
-                try:
+                # receive the size of incoming data
+                data_size = conn.recv(4)
+                data_size = struct.unpack('>I', data_size)[0]
+                self.logger.debug("Received size of {} from crawler".format(data_size))
 
-                    # Receive the size of the data first
-                    print("Receiving the size of the crawler data.")
-                    data_size = conn.recv(4)
-                    data_size = struct.unpack('>I', data_size)[0]
+                # receive the metadata
+                total_data = conn.recv(data_size)
+                str_metadata_decode = total_data.decode()
+                self.logger.debug("Received metadata: {}".format(str_metadata_decode))
 
-                    # Receive the metadata and decode
-                    total_data = conn.recv(data_size)
-                    str_metadata_decode = total_data.decode()
-                    print("!!!! Checking the received metadata.")
-                    print(str_metadata_decode)
+                # process metadata and update URL Map
+                metadata = self._process_url_metadata(ast.literal_eval(str_metadata_decode))
+                self.logger.debug("Saving metadata to URL Map: {}".format(pprint.pformat(metadata)))
+                self._update_url_map(conn=self.redis_conn, data=metadata)
 
-                    # Organize the raw data received and deduplicate
-                    print("Processing data and remove duplicates...")
-                    metadata = self.process_url_metadata(ast.literal_eval(str_metadata_decode))
-                    print("!!!! Checking the processed data")
-                    print(metadata)
-
-                    # Compare the data with that in Redis and decide whether to save
-                    print("Saving metadata into Redis database...")
-                    self.update_url_map(conn=self.redis_conn, data=metadata)
-
-                except Exception as e:
-                    print(str(e))
-                    continue
-
-
-        except Exception as e:
-            print(traceback.format_exc())
-            conn.close(),
+            except:
+                self.logger.error(traceback.format_exc())
+                conn.close()
+                break
 
 
 if __name__ == '__main__':
 
     # create the balancer
     balancer = DomainBalancer()
-
-    # start URL Map and listen for connections
-    balancer.bootstrap_url_map()
     balancer.start_listening()
+    connected_crawlers = []
 
     # accept a new connection and start a thread
     while True:
+
         try:
-            sock_conn, _ = balancer.accept_connection()
-            th = threading.Thread(target=balancer.crawler_talk, args=(sock_conn,))
-            th.start()
+
+            cc = {}
+            cc['conn'], _ = balancer._accept_connection()
+            cc['thread'] = threading.Thread(daemon=True, target=balancer.crawler_talk, args=(cc['conn'],))
+            cc['thread'].start()
+            connected_crawlers.append(cc)
+
         except KeyboardInterrupt:
-            break
+
+            # no need to stop running threads, as they have the daemon flag
+            # stop incoming connections
+            balancer.logger.info("KEYBOARD INTERRUPT :: finishing gracefully.")
+            balancer.stop_listening()
+            exit()
+
         except:
+            balancer.logger.error(traceback.format_exc())
             continue
