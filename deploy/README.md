@@ -62,6 +62,7 @@ kubectl run curl --image=radial/busyboxplus:curl -i --tty
 # in the pod's shell, check DNS lookups
 nslookup crawling-service
 nslookup balancing-service
+nslookup urlmap.balancing-service
 ```
 
 ### Monitoring
@@ -80,7 +81,7 @@ minikube dashboard
 
 ### Storage
 
-#### list persistent volumes
+#### List persistent volumes
 
 ```sh
 kubectl get pv
@@ -108,13 +109,33 @@ kubectl delete statefulsets,pv,pvc,sc --all
 kubectl delete daemonsets,replicasets,services,deployments,pods,rc,statefulsets,pv,pvc,sc --all
 ```
 
-## Rebuilding images and running
+---
+
+## Other useful stuff
+
+### Rebuilding images and running
 
 ```sh
 docker build -t bingocrawler/<module>:latest .
-docker run --name crawler -it bingocrawler/crawler:latest ../.env.local
-docker run --name balancer -it bingocrawler/balancer:latest ../.env.local
+
+# then push to Docker Hub
+docker push bingocrawler/<module>:latest
+
+# or run locally (not in minikube, as it will pull the image from Docker Hub)
+docker run --name crawler -it bingocrawler/crawler:latest .env.local
+docker run --name balancer -it bingocrawler/balancer:latest .env.local
 ```
+
+### Starting interactive shell
+
+```sh
+# it might only work with "Running" containers. Check status with:
+kubectl get pods
+# connect to pod / container:
+kubectl exec -it <POD_NAME> -- /bin/sh
+```
+
+---
 
 ## Useful links
 
