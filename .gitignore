@@ -1,7 +1,3 @@
-# dotenv which might contain secret keys
-.env*
-!.env.example
-
 .vscode/
 
 # Byte-compiled / optimized / DLL files

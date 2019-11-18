@@ -15,6 +15,7 @@ import struct
 import boto3
 import json
 import time
+import sys
 import os
 
 
@@ -312,10 +313,8 @@ class Crawler(object):
         Returns
             Balancer's hostname and port.
         """
-        env = os.environ.get("ENVIRONMENT", "local")
-        host =  os.environ.get("BALANCER_HOST_AWS") if env == "aws" else \
-                os.environ.get("BALANCER_HOST_LOCAL")
-        port = int(os.environ.get("BALANCER_PORT"))
+        host = os.environ.get("BALANCER_HOST")
+        port = int(os.environ.get("BALANCER_PORT", 23456))
 
         assert host and port, "Could not load balancer's hostname and port from environment."
 
@@ -386,7 +385,8 @@ class Crawler(object):
 if __name__ == "__main__":
 
     # env vars and logging
-    load_dotenv(dotenv_path='../.env')
+    dotenv_path = sys.argv[1] if len(sys.argv) > 1 else '.env'
+    load_dotenv(dotenv_path=dotenv_path)
 
     # initialize crawler and recreate it if needed
     crawler = None

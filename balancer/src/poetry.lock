@@ -119,6 +119,17 @@ version = "0.4.1"
 
 [[package]]
 category = "main"
+description = "Log formatting with colors!"
+name = "colorlog"
+optional = false
+python-versions = "*"
+version = "4.0.2"
+
+[package.dependencies]
+colorama = "*"
+
+[[package]]
+category = "main"
 description = "Docutils -- Python Documentation Utilities"
 name = "docutils"
 optional = false
@@ -323,7 +334,7 @@ python-versions = "*"
 version = "1.11.2"
 
 [metadata]
-content-hash = "cff0d6fe694eea24c37cc1a721fec90b70b9694ca75298247d2ffac50943057b"
+content-hash = "31bd4c13bac120c4319449957914b909f5618e441f1fa7f2ba765068a00d004b"
 python-versions = "^3.6"
 
 [metadata.hashes]
@@ -336,6 +347,7 @@ bs4 = ["36ecea1fd7cc5c0c6e4a1ff075df26d50da647b75376626cc186e2212886dd3a"]
 certifi = ["e4f3620cfea4f83eedc95b24abd9cd56f3c4b146dd0177e83a21b4eb49e21e50", "fd7c7c74727ddcf00e9acd26bba8da604ffec95bf1c2144e67aff7a8b50e6cef"]
 chardet = ["84ab92ed1c4d4f16916e05906b6b75a6c0fb5db821cc65e70cbd64a3e2a5eaae", "fc323ffcaeaed0e0a02bf4d117757b98aed530d9ed4531e3e15460124c106691"]
 colorama = ["05eed71e2e327246ad6b38c540c4a3117230b19679b875190486ddd2d721422d", "f8ac84de7840f5b9c4e3347b3c1eaa50f7e49c2b07596221daec5edaabbd7c48"]
+colorlog = ["3cf31b25cbc8f86ec01fef582ef3b840950dea414084ed19ab922c8b493f9b42", "450f52ea2a2b6ebb308f034ea9a9b15cea51e65650593dca1da3eb792e4e4981"]
 docutils = ["6c4f696463b79f1fb8ba0c594b63840ebd41f059e92b31957c46b74a4599b6d0", "9e4d7ecfc600058e07ba661411a2b7de2fd0fafa17d1a7f7361cd47b1175c827", "a2aeea129088da402665e92e0b25b04b073c04b2dce4ab65caaa38b7ce2e1a99"]
 fake-useragent = ["c104998b750eb097eefc28ae28e92d66397598d2cf41a31aa45d5559ef1adf35"]
 idna = ["c357b3f628cf53ae2c4c05627ecc484553142ca23264e593d327bcde5e9c3407", "ea8b7f6188e6fa117537c3df7da9fc686d485087abf6ac197f9c46432f7e4a3c"]

@@ -1,27 +1,15 @@
-FROM python:3.7-alpine as base
-FROM base as builder
-
-RUN mkdir /install
-WORKDIR /install
-FROM base
+FROM bingocrawler/core:latest AS bingocore
 
 # required files
-COPY --from=builder /install /usr/local
-COPY .env src/poetry.lock src/pyproject.toml /bingo/
+COPY src/poetry.lock src/pyproject.toml /bingo/
 COPY src /bingo/bin
-
-# system requirements
-RUN apk --no-cache add curl
-RUN apk add --no-cache --update python3-dev gcc build-base libxml2-dev libxslt-dev
+COPY .env.aws .env.local /bingo/bin/
 
 # project requirements
 WORKDIR /bingo/bin
-RUN curl -sSL https://raw.githubusercontent.com/sdispater/poetry/master/get-poetry.py | python
-ENV PATH="/root/.local/bin:/root/.poetry/bin:${PATH}"
-RUN source $HOME/.poetry/env
 RUN poetry self:update
 RUN poetry config settings.virtualenvs.create false
 RUN poetry install --no-interaction
 
 # execute
-CMD ["python", "/bingo/bin/crawler_core.py"]
+ENTRYPOINT ["python", "/bingo/bin/crawler_core.py"]

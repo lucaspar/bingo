@@ -1,10 +1,4 @@
-"""
-Useful proxy list websites
-    https://www.sslproxies.org/ (100 IPs all Https, tested)
-    http://spys.one/en/https-ssl-proxy/ (90 IPs which are https, NOT TESTED YET)
-    https://hidemy.name/en/proxy-list/?type=hs#list (Over 2000 https, NOT TESTED YET)
-    https://www.proxy-list.download/HTTPS (1500 https, NOT TESTED YET)
-"""
+#!/usr/bin/env python
 import os
 import time
 import random
@@ -30,11 +24,16 @@ class BingoProxy(object):
         Args:
             concurrency:    number of maximum parallel requests
             timeout:        timeout for requests
-            test:           test proxy list on initialization
+            test:           if True, tests proxy list on initialization
         """
 
         # set parameters
-        self._PROXY_SOURCES = ['https://www.sslproxies.org/']  # websites with proxy lists
+        self._PROXY_SOURCES = [                 # websites with proxy lists
+            'https://www.sslproxies.org/',
+            # 'http://spys.one/en/https-ssl-proxy/',
+            # 'https://hidemy.name/en/proxy-list/?type=hs',
+            # 'https://www.proxy-list.download/HTTPS',
+        ]
         self._IP_TEST_URLS = [                                  # urls to probe ip addresses
             'https://ident.me/',
             'http://icanhazip.com',
@@ -64,7 +63,7 @@ class BingoProxy(object):
 
         # define self._real_ip ip by making a request without proxy
         if test:
-            self.test_and_remove()
+            self._test_and_remove()
 
         # fetch proxy ips
         self._update_plist()
@@ -102,7 +101,7 @@ class BingoProxy(object):
             pass
 
 
-    def test_and_remove(self, proxy=None, test_only=False):
+    def _test_and_remove(self, proxy=None, test_only=False):
         """
         Tests a specific proxy and updates proxy list on failure.
 
@@ -205,14 +204,6 @@ class BingoProxy(object):
 
         self.logger.info("Updated proxy list: {} proxies available".format(len(self.proxy_list)))
         return self.proxy_list
-
-
-    def _random_proxy(self):
-        """
-        Returns:
-            Random index for a proxy.
-        """
-        return random.choice(range(len(self.proxy_list)))
 
 
     def _proxy_request(self, url, proxy=None, enforce_proxy=False):
@@ -347,7 +338,7 @@ if __name__ == '__main__':
 
         pl_copy = list(bp.proxy_list)
         for idx, proxy in enumerate(pl_copy):
-            works.append(bp.test_and_remove(proxy))
+            works.append(bp._test_and_remove(proxy))
 
         print(len(bp.proxy_list), "proxies after testing\n\n----\n")
         for p in bp.proxy_list:

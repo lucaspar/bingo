@@ -14,6 +14,7 @@ import redis
 import json
 import time
 import ast
+import sys
 import os
 
 
@@ -21,7 +22,6 @@ class DomainBalancer(object):
 
     def __init__(self):
 
-        load_dotenv(dotenv_path='../.env')
         self._config_logging()
 
         self.nb_urls_init = 1
@@ -257,6 +257,10 @@ class DomainBalancer(object):
 
 
 if __name__ == '__main__':
+
+    # load environment variables
+    dotenv_path = sys.argv[1] if len(sys.argv) > 1 else '.env'
+    load_dotenv(dotenv_path=dotenv_path)
 
     # create the balancer
     balancer = DomainBalancer()

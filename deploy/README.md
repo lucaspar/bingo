@@ -2,29 +2,30 @@
 
 ## CREATION
 
-### Create secrets
+### Create reusable resources
 
 ```sh
 # create files
 code AWS_ACCESS_KEY_ID.txt && code AWS_SECRET_ACCESS_KEY.txt
 
-# create secrets
-./create_secrets.sh
+# create secrets and configmaps
+./create_resources.sh
 ```
 
 ### Create cluster
 
-#### Option A: Local
+#### `Option A:` Local
 
 ```sh
 minikube start
 ```
 
-#### Option B: AWS (this will cost $)
+#### `Option B:` AWS (this will cost $)
 
 ```sh
-eksctl create cluster --version 1.14 --nodegroup-name bingo --node-type t3.nano \
-    --nodes 2 --nodes-min 1 --nodes-max 4 --node-ami auto --name bingo-nano
+eksctl create cluster --version 1.14 --nodegroup-name bingo \
+    --node-type t3.nano --nodes 2 --nodes-min 1 --nodes-max 4 \
+    --node-ami auto --name bingo-nano
 ```
 
 #### Apply kubeconfig files
@@ -33,9 +34,6 @@ eksctl create cluster --version 1.14 --nodegroup-name bingo --node-type t3.nano 
 kubectl apply -f kubeconfig.crawling.yaml
 kubectl apply -f kubeconfig.indexing.yaml
 ```
-
-> To use `redis.conf` file see:
-https://github.com/GoogleCloudPlatform/redis-docker/blob/master/4/README.md#configurations
 
 ### Networking
 
@@ -108,6 +106,14 @@ kubectl delete statefulsets,pv,pvc,sc --all
 
 ```sh
 kubectl delete daemonsets,replicasets,services,deployments,pods,rc,statefulsets,pv,pvc,sc --all
+```
+
+## Rebuilding images and running
+
+```sh
+docker build -t bingocrawler/<module>:latest .
+docker run --name crawler -it bingocrawler/crawler:latest ../.env.local
+docker run --name balancer -it bingocrawler/balancer:latest ../.env.local
 ```
 
 ## Useful links
