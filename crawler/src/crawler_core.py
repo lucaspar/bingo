@@ -315,7 +315,7 @@ class Crawler(object):
             Balancer's hostname and port.
         """
         host = os.environ.get("BALANCER_HOST")
-        port = int(os.environ.get("BALANCER_PORT", 23456))
+        port = int(os.environ.get("BALANCER_PORT"))
 
         assert host and port, "Could not load balancer's hostname and port from environment."
 
