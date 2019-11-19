@@ -101,7 +101,7 @@ class Crawler(object):
             soup = BeautifulSoup(response.text, "lxml")
 
             # store to S3 bucket if in AWS
-            if os.environ.get("ENVIRONMENT", "local") == "aws":
+            if os.environ.get("ENVIRONMENT") == "aws":
                 url_hash = hashlib.sha1(url.encode()).hexdigest()
                 self._store_in_s3(os.getenv("S3_BUCKET_NAME"), \
                     url_hash, soup.prettify().encode('utf-8'))
@@ -268,7 +268,8 @@ class Crawler(object):
                 self.logger.info("Connected to balancer!")
                 break
             except ConnectionRefusedError:
-                self.logger.warn("Balancer seems down. Trying again...")
+                hostname, port = self._get_balancer_info()
+                self.logger.warning("Balancer {}:{} seems down. Trying again...".format(hostname, port))
             except Exception:
                 self.logger.error(traceback.format_exc())
             time.sleep(5)
@@ -296,7 +297,7 @@ class Crawler(object):
         if res:
             self.logger.info("Document {} stored in S3".format(file_name))
         else:
-            self.logger.warn("Document {} S3 storing has failed".format(file_name))
+            self.logger.warning("Document {} S3 storing has failed".format(file_name))
 
         return bool(res)
 

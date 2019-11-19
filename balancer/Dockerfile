@@ -11,5 +11,7 @@ RUN poetry self:update
 RUN poetry config settings.virtualenvs.create false
 RUN poetry install --no-interaction
 
+EXPOSE 23456
+
 # execute
 ENTRYPOINT ["python", "/bingo/bin/domain_balancer.py"]

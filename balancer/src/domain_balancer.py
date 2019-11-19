@@ -28,10 +28,18 @@ class DomainBalancer(object):
         self.nb_url_increase = 0
         self.thresh_url = 0
 
-        self.redis_conn = redis.Redis(host=os.environ.get("URL_MAP_HOST"))
+        while True:
+            try:
+                self.redis_conn = redis.Redis(host=os.environ.get("URL_MAP_HOST"))
+                self.redis_conn.ping()
+                self.logger.info("Balancer connected to URL Map!")
+                break
+            except:
+                self.logger.warning("URL Map seems to be offline. Retrying...")
+                time.sleep(5)
 
         self.PORT = int(os.environ.get("BALANCER_PORT"))
-        self.HOST = os.environ.get("BALANCER_HOST")
+        self.HOST = socket.gethostname()
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
@@ -287,5 +295,5 @@ if __name__ == '__main__':
             exit()
 
         except:
-            balancer.logger.error(traceback.format_exc())
-            continue
+            balancer.logger.critical("Fatal error in Balancer:\n\n{}".format(traceback.format_exc()))
+            break

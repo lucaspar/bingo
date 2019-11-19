@@ -1,6 +1,6 @@
 # Cluster Creation Walkthrough
 
-## CREATION
+## Creation
 
 ### Create reusable resources
 
@@ -35,22 +35,24 @@ kubectl apply -f kubeconfig.crawling.yaml
 kubectl apply -f kubeconfig.indexing.yaml
 ```
 
-### Networking
+> The cluster will now be created. You can [monitor](#Monitoring) it using a browser.
 
-#### List available endpoints
+## Networking
+
+### List available endpoints
 
 ```sh
 kubectl get ep
 ```
 
-#### Remote accessing URL Map (Redis) pod
+### Remotely accessing URL Map (Redis) pod
 
 ```sh
 kubectl expose pod urlmap-pod --name urlmap-6379 --type LoadBalancer --port 6379 --protocol TCP
 kubectl exec -it urlmap-pod -- redis-cli
 ```
 
-#### Probing DNS Server
+### Probing DNS Server
 
 ```sh
 # check whether DNS service is running
@@ -62,48 +64,50 @@ kubectl run curl --image=radial/busyboxplus:curl -i --tty
 # in the pod's shell, check DNS lookups
 nslookup crawling-service
 nslookup balancing-service
-nslookup urlmap.balancing-service
+nslookup urlmap-service
 ```
 
-### Monitoring
+## Monitoring
 
-#### Local deploy dashboard
+### Local dashboard
 
 ```sh
 minikube dashboard
 ```
 
-#### AWS deploy dashboard
+### AWS dashboard
 
 ```sh
 ./k8dashboard.sh
 ```
 
-### Storage
+## Storage
 
-#### List persistent volumes
+### List persistent volumes and claims
 
 ```sh
 kubectl get pv
 kubectl get pvc
 ```
 
-### Cleanup
+## Cleanup
 
-#### Delete volatile `kubectl` resources
+### Delete volatile `kubectl` resources
 
 ```sh
 kubectl delete daemonsets,replicasets,services,deployments,pods,rc --all
 ```
 
-#### `[ Danger ]` Delete **persistent data**
+#### `[ Danger ]` Delete **persistent data** only
 
 ```sh
 # stateful sets, persistent volumes, persistent volume claims, and storage classes
 kubectl delete statefulsets,pv,pvc,sc --all
 ```
 
-#### `[ Danger ]` Delete everything (incl. persistent data!)
+#### `[ Danger ]` Delete everything created but `Secrets` and `ConfigMaps`
+
+> Persistent data will be deleted!
 
 ```sh
 kubectl delete daemonsets,replicasets,services,deployments,pods,rc,statefulsets,pv,pvc,sc --all
@@ -131,8 +135,36 @@ docker run --name balancer -it bingocrawler/balancer:latest .env.local
 ```sh
 # it might only work with "Running" containers. Check status with:
 kubectl get pods
+
 # connect to pod / container:
 kubectl exec -it <POD_NAME> -- /bin/sh
+
+# start a new "debug" pod:
+kubectl run debug-pod --rm -i --tty --image alpine:latest -- /bin/sh
+apk add less nano nmap curl
+apk add python3
+```
+
+### Debug socket connection
+
+```sh
+# start a new "debug" pod:
+kubectl run debug-pod --rm -i --tty --image alpine:latest -- /bin/sh
+
+# check if port appears open
+apk add nmap
+nmap balancing-service -p 9999
+
+# test opening a socket
+apk add nano curl python3
+echo -e "
+import socket\n\n\
+sock_balancer = socket.socket(socket.AF_INET,\
+socket.SOCK_STREAM)\n\
+sock_balancer.connect(('balancing-service', 9999))\n\n\
+print('Connected!')\n\
+sock_balancer.close()" > socket_test.py
+python3 socket_test.py
 ```
 
 ---
