@@ -148,6 +148,10 @@ apk add python3
 ### Debug socket connection
 
 ```sh
+# check configured ports in service and pod
+kubectl get service balancing-service -o json | grep -C 3 -E "port|Port"
+kubectl get pod domain-balancer-pod -o json | grep -C 3 -E "port|Port"
+
 # start a new "debug" pod:
 kubectl run debug-pod --rm -i --tty --image alpine:latest -- /bin/sh
 
