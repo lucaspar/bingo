@@ -24,8 +24,8 @@ minikube start
 
 ```sh
 eksctl create cluster --version 1.14 --nodegroup-name bingo \
-    --node-type t3.nano --nodes 2 --nodes-min 1 --nodes-max 4 \
-    --node-ami auto --name bingo-nano
+    --node-type t3.small --nodes 2 --nodes-min 1 --nodes-max 10 \
+    --node-ami auto --name bingo-small
 ```
 
 #### Apply kubeconfig files
@@ -33,6 +33,22 @@ eksctl create cluster --version 1.14 --nodegroup-name bingo \
 ```sh
 kubectl apply -f kubeconfig.crawling.yaml
 kubectl apply -f kubeconfig.indexing.yaml
+```
+
+## AWS Cluster Operations
+
+### Scaling
+
+```sh
+eksctl scale nodegroup --cluster bingo-nano -n bingo -N <NEW_NUMBER_OF_NODES>
+```
+
+### Deleting
+
+```sh
+# this may take ~15min to complete
+eksctl delete cluster --name=bingo-nano
+eksctl get clusters
 ```
 
 > The cluster will now be created. You can [monitor](#Monitoring) it using a browser.

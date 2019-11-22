@@ -2,7 +2,7 @@
 set -e
 
 # choose deploy environment (local or aws):
-DEPLOY_ENV=local
+DEPLOY_ENV=aws
 
 echo " > Creating static resources for '$DEPLOY_ENV' environment..."
 
