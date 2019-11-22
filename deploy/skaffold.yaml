@@ -1,0 +1,17 @@
+apiVersion: skaffold/v1
+kind: Config
+metadata:
+  name: deploy
+build:
+  artifacts:
+  - image: bingocrawler/balancer
+    context: ../balancer
+  - image: bingocrawler/crawler
+    context: ../crawler
+  # - image: bingocrawler/indexer
+  #   context: bingocore
+deploy:
+  kubectl:
+    manifests:
+    - kubeconfig.crawling.yaml
+    # - kubeconfig.indexing.yaml
