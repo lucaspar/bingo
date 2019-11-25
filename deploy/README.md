@@ -28,11 +28,10 @@ eksctl create cluster --version 1.14 --nodegroup-name bingo \
     --node-ami auto --name bingo-small
 ```
 
-#### Apply kubeconfig files
+#### Deploy with Skaffold
 
 ```sh
-kubectl apply -f kubeconfig.crawling.yaml
-kubectl apply -f kubeconfig.indexing.yaml
+skaffold dev
 ```
 
 ## AWS Cluster Operations
@@ -47,7 +46,7 @@ eksctl scale nodegroup --cluster bingo-nano -n bingo -N <NEW_NUMBER_OF_NODES>
 
 ```sh
 # this may take ~15min to complete
-eksctl delete cluster --name=bingo-nano
+eksctl delete cluster --name=bingo-small
 eksctl get clusters
 ```
 
