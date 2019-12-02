@@ -141,7 +141,7 @@ kubectl delete -n default statefulsets,pv,pvc,sc,ing --all
 > Persistent data will be deleted!
 
 ```sh
-kubectl delete -n default daemonsets,replicasets,services,deployments,pods,rc,statefulsets,pv,pvc,sc,ing --all
+kubectl delete -n default secrets,configmaps,daemonsets,replicasets,services,deployments,pods,rc,statefulsets,pv,pvc,sc,ing --all
 ```
 
 ---
