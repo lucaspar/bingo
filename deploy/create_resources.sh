@@ -2,7 +2,12 @@
 set -e
 
 # choose deploy environment (local or aws):
-DEPLOY_ENV=aws
+# DEPLOY_ENV=local
+DEPLOY_ENV=$(kubectl config current-context)
+if [ DEPLOY_ENV != aws ]; then
+    DEPLOY_ENV=local
+fi
+export DEPLOY_ENV
 
 echo " > Creating static resources for '$DEPLOY_ENV' environment..."
 
@@ -17,6 +22,8 @@ kubectl create secret generic deploy --from-literal=ENV_FILE=.env.$DEPLOY_ENV
 # create configmap for redis.conf
 # based on: https://github.com/GoogleCloudPlatform/redis-docker/blob/master/4/README.md#configurations
 kubectl delete configmap --ignore-not-found redisconfig
+kubectl delete configmap --ignore-not-found -n monitoring prometheus-server-conf
 kubectl create configmap redisconfig --from-file=../balancer/redis.conf
+kubectl apply -f configmap-prometheus-server.yaml
 
 echo " > Resources created for '$DEPLOY_ENV' environment!"

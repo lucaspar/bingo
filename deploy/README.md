@@ -96,6 +96,22 @@ minikube dashboard
 ./k8dashboard.sh
 ```
 
+### Prometheus and Grafana
+
+```sh
+# start prometheus and grafana
+kubectl apply -f kubeconfig.monitoring.yaml
+
+# permission fix
+real_user=$USER
+sudo -u $real_user kubectl create clusterrolebinding permissive-binding --clusterrole=cluster-admin --user=admin --user=kubelet --group=system:serviceaccounts
+
+# port forwarding
+kubectl port-forward -n monitoring $(kubectl get pods -n monitoring --selector=app=prometheus-server --output=jsonpath="{.items..metadata.name}") 9090 &
+
+kubectl port-forward -n monitoring $(kubectl get pods -n monitoring --selector=app=grafana --output=jsonpath="{.items..metadata.name}") 3000 &
+```
+
 ## Storage
 
 ### List persistent volumes and claims
@@ -110,14 +126,14 @@ kubectl get pvc
 ### Delete volatile `kubectl` resources
 
 ```sh
-kubectl delete daemonsets,replicasets,services,deployments,pods,rc --all
+kubectl delete -n default daemonsets,replicasets,services,deployments,pods,rc,ing --all
 ```
 
 #### `[ Danger ]` Delete **persistent data** only
 
 ```sh
 # stateful sets, persistent volumes, persistent volume claims, and storage classes
-kubectl delete statefulsets,pv,pvc,sc --all
+kubectl delete -n default statefulsets,pv,pvc,sc,ing --all
 ```
 
 #### `[ Danger ]` Delete everything created but `Secrets` and `ConfigMaps`
@@ -125,7 +141,7 @@ kubectl delete statefulsets,pv,pvc,sc --all
 > Persistent data will be deleted!
 
 ```sh
-kubectl delete daemonsets,replicasets,services,deployments,pods,rc,statefulsets,pv,pvc,sc --all
+kubectl delete -n default daemonsets,replicasets,services,deployments,pods,rc,statefulsets,pv,pvc,sc,ing --all
 ```
 
 ---
