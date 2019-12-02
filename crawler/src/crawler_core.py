@@ -13,6 +13,7 @@ import socket
 import pprint
 import struct
 import boto3
+import queue
 import json
 import time
 import sys
@@ -29,6 +30,9 @@ class Crawler(object):
         # setup robots.txt parser
         self.robot_parser = urllib.robotparser.RobotFileParser()
         self.robot_parser.last_checked = True
+        self._MAX_ROBOTS_CACHE_LENGTH = 200
+        self._robots_cache = dict()
+        self._robots_queue = queue.LifoQueue()
 
         # load blacklisted urls and domains
         self.b_domains, self.b_urls = self._load_blacklist()
@@ -43,7 +47,7 @@ class Crawler(object):
         self.bp = BingoProxy(concurrency=concurrency, timeout=timeout)
 
         # initialize other variables
-        self.url_list = []
+        self.url_list = list()
         self.processed_urls = set()
 
 
@@ -55,6 +59,21 @@ class Crawler(object):
             self.sock_balancer.close()
             time.sleep(5)
         self.sock_balancer = self._connect_to_balancer()
+
+
+    def _update_robots_cache(self, robots_url, data):
+
+        # reduce cache size if necessary
+        if len(self._robots_cache) > self._MAX_ROBOTS_CACHE_LENGTH:
+            to_remove = self._robots_queue.get()
+            del self._robots_cache[to_remove]
+
+        # cache robots file
+        self._robots_cache[robots_url] = data
+        self._robots_queue.put(str(robots_url))
+
+        # sanity check
+        assert self._robots_queue.qsize() == len(self._robots_cache)
 
 
     def _are_robots_allowed(self, url):
@@ -70,8 +89,14 @@ class Crawler(object):
         try:
             parsed_uri = urlparse(url)
             robots_url = '{uri.scheme}://{uri.netloc}/robots.txt'.format(uri=parsed_uri)
-            response = self.bp.request(robots_url).next()
-            self.robot_parser.parse(response.text)
+
+            # fetch robots file if not in cache
+            if robots_url not in self._robots_cache:
+                response = self.bp.request(robots_url).next()
+                self._update_robots_cache(robots_url, response.text)
+
+            # parse robots file and return boolean
+            self.robot_parser.parse(self._robots_cache[robots_url])
             return self.robot_parser.can_fetch('*', url)
 
         except requests.exceptions.HTTPError as err:
@@ -101,10 +126,12 @@ class Crawler(object):
             soup = BeautifulSoup(response.text, "lxml")
 
             # store to S3 bucket if in AWS
-            if os.environ.get("ENVIRONMENT") == "aws":
+            if os.environ.get("ENABLE_S3_STORAGE") == "True":
                 url_hash = hashlib.sha1(url.encode()).hexdigest()
-                self._store_in_s3(os.getenv("S3_BUCKET_NAME"), \
-                    url_hash, soup.prettify().encode('utf-8'))
+                self._store_in_s3(os.getenv("S3_BUCKET_NAME"),
+                                  file_name=url_hash,
+                                  data=soup.prettify().encode('utf-8'),
+                                  url=url)
 
             meta = self._make_dict(response.status_code)
             return soup, meta
@@ -277,7 +304,7 @@ class Crawler(object):
         return sock_balancer
 
 
-    def _store_in_s3(self, bucket, file_name, data):
+    def _store_in_s3(self, bucket, file_name, data, url=None):
         '''
         Creates a new object in S3
 
@@ -291,7 +318,7 @@ class Crawler(object):
 
         s3 = boto3.resource('s3')
         obj = s3.Object(bucket, file_name)
-        res = obj.put(Body=data)
+        res = obj.put(Body=data, Metadata={'url': url})
         # access more info with res['ResponseMetadata']
 
         if res:
