@@ -38,9 +38,10 @@ class indexer(object):
         self.s3 = boto3.resource('s3')
 
         # Set other parameters
-        self.debug = True
+        self.debug = False
         self.nb_test_doc = 3
         self.len_limit = 2
+        self.nb_file_fetch = 5
 
         # MongoDB set up
         self.mongo_host = 'localhost'
@@ -60,10 +61,26 @@ class indexer(object):
 
         file_key_list = []
 
+        # Check the number of files in the S3
+        # TODO: How to prevent more than one indexer to
+        #  fetch the list at the same time.
         for bucket_object in bucket.objects.all():
             file_key_list.append(bucket_object.key)
 
-        return file_key_list
+        print("There are totally %d files on S3." % len(file_key_list))
+
+        # TODO: How to decide the number of files we should fetch??
+        if (len(file_key_list)) >= self.nb_file_fetch:
+            file_key_list_return = file_key_list[0:self.nb_file_fetch]
+            return file_key_list_return
+
+        elif (len(file_key_list) <= self.nb_file_fetch) and (len(file_key_list) > 0):
+            file_key_list_return = file_key_list[0]
+            return file_key_list_return
+
+        else:
+            print("There is no document in S3...")
+
 
 
     def load_s3_doc(self, file_key):
@@ -77,15 +94,17 @@ class indexer(object):
 
         return s3_obj.get()['Body'].read().decode('utf-8')
 
-
-    # TODO: Update s3 file status with processed/not processed
-    def check_s3_file(self):
+    def remove_s3_doc(self, file_key):
         """
 
-        :return:
+        :param file_key:
+        :return: NA
         """
+        # bucket = self.s3.Bucket(self.BUCKET_NAME)
+        # bucket.delete_key()
+        return self.s3.Object(self.BUCKET_NAME, file_key).delete()
 
-        pass
+
 
 
     def build_mongo_connection(self):
@@ -143,27 +162,13 @@ class indexer(object):
         :return: processed text/word list
         """
 
-        if self.debug:
-            print("[Debug info] This is for debugging.")
-            nb_doc = self.nb_test_doc
-
-        else:
-            print("[INFO] Processing all the files in S3 bucket.")
-            nb_doc = len(s3_doc_key_list)
-
         result_list = []
 
-        for i in range(nb_doc):
+        for file_key in (s3_key_list):
             one_file_word_list = []
 
             print("*"*50)
             print("[INFO] Processing one file...")
-
-            # Get the keys for the files.
-            if self.debug:
-                file_key = s3_key_list[random.choice(range(len(s3_key_list)))]
-            else:
-                file_key = s3_key_list[i]
 
             file = self.load_s3_doc(file_key=file_key)
             # print(file) # Confirmed
@@ -213,15 +218,17 @@ class indexer(object):
                 for (i, word) in enumerate(filtered_list):
                     sentence_words[i] = wordnet_lemmatizer.lemmatize(word, pos=self.get_wordnet_pos(word))
 
-                    # if self.debug:
-                    #     print ("{0:20}{1:20}".format(word, wordnet_lemmatizer.lemmatize(word, pos=self.get_wordnet_pos(word))))
-
                 for word in sentence_words:
                     one_file_word_list.append(word)
 
             # Remove the duplication
             new_list = list(set(one_file_word_list))
             result_list.append(new_list)
+
+            # Remove processed file from S3
+            self.remove_s3_doc(file_key=file_key)
+            print("File removed:" + file_key)
+
 
         return result_list
 
@@ -250,7 +257,6 @@ class indexer(object):
 
         :return: N/A
         """
-
         posts = database.posts
 
         try:
