@@ -8,20 +8,27 @@ import redis
 import ast
 import random
 import threading
-import time
-
+import struct
+from urllib.parse import urlparse
+from collections import Counter
+import sys
+import json
+import pickle
+import traceback
 
 
 class domain_balancer(object):
     def __init__(self):
-        self.nb_crawler = 1
+        self.nb_crawler = 2
         self.nb_urls_init = 1
-        self.receive_size = 1024
+        self.receive_size = 4
         self.thresh_url = 0
+        self.nb_url_increase = 0
 
         self.PORT = 23456
         self.HOSTNAME = '127.0.0.1'
         self.redis_conn = redis.Redis('localhost')
+        self.all_redis_keys = self.redis_conn.keys()
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def tmp_create_domain(self):
@@ -32,6 +39,7 @@ class domain_balancer(object):
         """
 
         # Create domain list
+        # TODO: we will need more initial domains in the future!!!
         init_domain = {
             "https://www.wikipedia.org": {"status": "000", "timestamp": "000"},
             "https://www.nd.edu": {"status": "000", "timestamp": "000"},
@@ -45,20 +53,36 @@ class domain_balancer(object):
 
             self.redis_conn.hmset(key, value)
 
+
+
     def process_metadata_str(self, metadata_str):
         """
+        Process the metadata from the crawler:
+            For the processed URLs: Remove the duplications
+            For the new URLs: Generate the metadata and save into redis
+
         :parameter
             metadata_str: the decoded metadata received from the crawler
+
         :return:
             A metadata dictionary after de-duplication.
         """
         result = {}
 
         for key, value in metadata_str.items():
-            if value not in result.values():
-                result[key] = value
+            # Deal with the new URLs
+            if key == "new_urls":
+                # Assign the empty status and time stamp for the new urls
+                for url in value:
+                    result[url] = {"status": "000", "timestamp": "000"}
+
+            # Deal with the processed URLs
+            else:
+                if value not in result.values():
+                    result[key] = value
 
         return result
+
 
     def check_redis_and_save_data(self, conn, data):
         """
@@ -67,9 +91,10 @@ class domain_balancer(object):
 
         :parameter:
             data: de-duplicated metadata
-        :return:
-            N/A
+
+        :return: N/A
         """
+
         for key in data:
             value = data.get(key, {})
 
@@ -79,10 +104,12 @@ class domain_balancer(object):
             else:
                 conn.hmset(key, value)
 
+
     def get_socket_listen(self):
         """
+        Socket listening.
 
-        :return:
+        :return: NA
         """
         # Socket connection: balancer starts to listen
         server_address = (self.HOSTNAME, self.PORT)
@@ -91,11 +118,11 @@ class domain_balancer(object):
         self.sock.listen(1)
 
 
-
     def get_socket_acceptance(self):
         """
+        Socket accepting.
 
-        :return:
+        :return: NA
         """
 
         # Socket connection: balancer accepts
@@ -107,34 +134,76 @@ class domain_balancer(object):
 
     def get_balanced_urls(self):
         """
+        Balancing the domains and distribute them to the crawlers.
 
-        :return:
+        :return: The balanced URLs
         """
 
         # TODO: Update the nb of URLs according to the data size in redis
-        nb_total_url = len(self.redis_conn.keys())
+        nb_total_url = len(self.all_redis_keys)
+        print("!!!!! Number of total URL is %d" % nb_total_url) # Confirmed!
 
-        # TODO: How to decide the rules for nb of URLs sending to each crawler??
+
         if nb_total_url <= self.thresh_url:
+            print("We need more URLs...")
             pass
+
         else:
-            pass
+            # TODO: How to decide the rules for nb of URLs sending to each crawler??
+            nb_url_single_crawler = self.nb_urls_init + self.nb_url_increase
 
-        # TODO: Only randomly select a portion of URLs for balancing
-        random_urls = None
 
-        # Get balanced URLs
-        # TODO: Put URL balancing function here
-        balanced_urls = None
+        domain_url_list = []
+        domain_list = []
+
+        for url in self.all_redis_keys:
+            url = url.decode()
+            parsed_uri = urlparse(url)
+            domain_result = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
+
+            # Get the list for the domains and URLs
+            domain_url_list.append((domain_result, url))
+            domain_list.append(domain_result)
+
+        # Sort them to make sure they are both in a same order
+        domain_url_list.sort()
+        domain_list.sort(key=lambda x: x[0])
+        print("Confirming the domain list...")
+        print(domain_list)
+
+        # Count the number of domains
+        counts = Counter(domain_list)
+        print("There are %d different domains." % len(counts.keys()))
+
+        # Get some URLs from each domain
+        return_key_list = []
+
+        for i in range(len(counts.keys())):
+            for n in range(nb_url_single_crawler):
+                one_random_key = domain_url_list[random.randint(0, len(domain_list)-1)]
+                return_key_list.append(one_random_key)
+                # Remove the key from redis after getting it
+                self.redis_conn.delete(one_random_key[1])
+
+        balanced_urls = []
+
+        for i in range(len(return_key_list)):
+            balanced_urls.append(return_key_list[i][1])
+
+        # print(balanced_urls)
+        # sys.exit(0)
 
         return balanced_urls
+
 
     def get_one_url_for_test(self):
         """
         A test function, only get one random URL for testing.
-        :return:
+
+        :return: A random URL from Redis
         """
         return(self.redis_conn.randomkey())
+
 
 
     def create_one_thread(self, conn, add):
@@ -147,18 +216,18 @@ class domain_balancer(object):
 
        try:
            while True:
-               # Get the URL list
-               # TODO: Use the get_balanced_urls function in the future
-               #url_list = self.get_balanced_urls()
+               # Get the URL list: Use the get_balanced_urls function
+               url_list = self.get_balanced_urls()
 
-               url_list = self.get_one_url_for_test()
-               # print("here is the url list ")
-               # print(url_list)
+               # This is for testing and debugging....
+               # url_list = self.get_one_url_for_test()
+               print("This is testing multiple URLs...")
+               print(url_list)
+               url_list = json.dumps(url_list).encode()
 
                # Get the size of data and send it to the crawler.
                print("Sending the size of data")
-               # print(str(len(url_list)).encode())
-               conn.sendall(str(len(url_list)).encode())
+               conn.sendall(struct.pack('>I', len(url_list)))
 
                # Then send the URL to the crawler
                print("Sending the URL...")
@@ -169,22 +238,24 @@ class domain_balancer(object):
                    # Receive the size of the data first
                    print("Receiving the size of the crawler data.")
                    data_size_str = conn.recv(self.receive_size)
-                   data_size = int(data_size_str)
-                   print("Metadata size:")
-                   print(data_size)
+                   data_size = struct.unpack('>I', data_size_str)[0]
 
                    # Receive the metadata and decode
                    total_data = conn.recv(data_size)
                    str_metadata_decode = total_data.decode()
-                   # print(str_metadata_decode)
+                   print("!!!! Checking the received metadata.")
+                   print(str_metadata_decode)
 
                    # Organize the raw data received and deduplicate
                    print("Processing data and remove duplicates...")
                    metadata = self.process_metadata_str(ast.literal_eval(str_metadata_decode))
+                   print("!!!! Checking the processed data")
+                   print(metadata)
 
                    # Compare the data with that in Redis and decide whether to save
                    print("Saving metadata into Redis database...")
                    self.check_redis_and_save_data(conn=self.redis_conn, data=metadata)
+                   print()
 
                except Exception as e:
                    print(str(e))
@@ -193,9 +264,8 @@ class domain_balancer(object):
 
        except Exception as e:
            print(str(e))
-           conn.close()
-           # pass
-
+           print(traceback.format_exc())
+           conn.close(),
 
 
 
