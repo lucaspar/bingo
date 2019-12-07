@@ -24,10 +24,9 @@ class DomainBalancer(object):
 
         self._config_logging()
 
-        self.nb_urls_init = 1
-        self.nb_url_increase = 0
-        self.thresh_url = 0
-
+        self.MIN_URLS_SEND = 1          # send this many urls per crawler at least
+        self.MAX_URLS_SEND = 20         # send this many urls per crawler at most
+        self.EXPECTED_NB_CRAWLERS = 10  # expected number of crawlers (just as reference, not updated!!)
         while True:
             try:
                 self.redis_conn = redis.Redis(host=os.environ.get("URL_MAP_HOST"))
@@ -159,6 +158,16 @@ class DomainBalancer(object):
         return connection, client_address
 
 
+    def _get_domain_from_url(self, url):
+        """
+        Returns the domain of a URL.
+        """
+        url = url.decode()
+        parsed_uri = urlparse(url)
+        domain = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
+        return domain
+
+
     def _get_balanced_urls(self):
         """
         Balancing the domains and distribute them to the crawlers.
@@ -167,52 +176,97 @@ class DomainBalancer(object):
             The balanced URLs
         """
 
-        nb_total_url = len(self.redis_conn.keys())
-        self.logger.debug("URL Map has {} URLs".format(nb_total_url))
+        urlmap_size = self.redis_conn.dbsize()
+        self.logger.debug("URL Map has {} URLs".format(urlmap_size))
 
-        if nb_total_url == 0:
+        if urlmap_size == 0:
             self.logger.error("URL Map is empty -- nothing to balance!")
             time.sleep(5)
             return []
 
         else:
-            # TODO: How to decide the rules for nb of URLs sending to each crawler??
-            nb_url_single_crawler = self.nb_urls_init + self.nb_url_increase
+            # decide how many urls to send to a crawler
+            # nb_urls_send is an ideal number: the actual quantity may be
+            # less if there are not enough urls available for balancing
+            max_distributed_urls = urlmap_size / self.EXPECTED_NB_CRAWLERS
+            increment = min(self.MAX_URLS_SEND, max_distributed_urls)
+            nb_urls_send = int(self.MIN_URLS_SEND + increment)
 
+        # ==== BALANCING ALGORITHM ====
+        # for candidate in self.redis_conn.scan_iter(match='userinfo_*'):
 
-        domain_url_list = []
-        domain_list = []
+        # 1. Get a set of candidate urls ( len(set) >> nb_urls_send ) without locks related
+        SCALING_FACTOR = 3
+        candidate_set = set()
+        for candidate in self.redis_conn.scan_iter():
+            self.logger.info(candidate)
+            expname = 'exp_' + candidate
+            if self.redis_conn.exists(expname) and self.redis_conn.ttl(expname) > 0:
+                continue
+            candidate_set.add(candidate)
+            if len(candidate_set) > nb_urls_send * SCALING_FACTOR:
+                break
 
-        for url in self.redis_conn.keys():
-            url = url.decode()
-            parsed_uri = urlparse(url)
-            domain_result = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
+        # 2. Group URL domains in sets
+        domain_sets = dict()
+        for url in candidate_set:
+            domain = self._get_domain_from_url(url)
+            if domain not in domain_sets:
+                domain_sets[domain] = set()
+            domain_sets[domain].add(url)
 
-            # Get the list for the domains and URLs
-            domain_url_list.append((domain_result, url))
-            domain_list.append(domain_result)
-
-        # Sort them to make sure they are both in a same order
-        domain_url_list.sort()
-        domain_list.sort(key=lambda x: x[0])
-
-        # Count the number of domains
-        domain_count = Counter(domain_list)
-        self.logger.debug("There are {} different domains.".format(len(domain_count.keys())))
-
-        # Get some URLs from each domain
-        return_key_list = []
-        for i in range(len(domain_count.keys())):
-            for _ in range(nb_url_single_crawler):
-                one_random_key = domain_url_list[random.randint(0, len(domain_list)-1)]
-                return_key_list.append(one_random_key)
-                # Remove the key from redis after getting it (???)
-                self.redis_conn.delete(one_random_key[1])
-
+        # 3. Round-robin among domain sets popping urls from them
         balanced_urls = []
+        while len(domain_sets) > 0:
+            domains = domain_sets.keys()
+            for d in domains:
+                url = domain_sets[d].pop()
+                balanced_urls.append(url)           # add to balanced
+                expname = 'exp_' + url
+                self.redis_conn.expire(expname, 60) # add expiring lock to key
+                if len(domain_sets[d]) == 0:
+                    del domain_sets[d]              # delete domain entry if empty
+            if len(balanced_urls) >= nb_urls_send:
+                break   # got enough URLs to send
 
-        for i in range(len(return_key_list)):
-            balanced_urls.append(return_key_list[i][1])
+        # ==== BALANCING ALGORITHM END ====
+
+        # # OLD BALANCING ALGORITHM:
+        # domain_url_list = []
+        # domain_list = []
+
+        # for url in self.redis_conn.keys():
+        #     url = url.decode()
+        #     parsed_uri = urlparse(url)
+        #     domain_result = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
+
+        #     # Get the list for the domains and URLs
+        #     domain_url_list.append((domain_result, url))
+        #     domain_list.append(domain_result)
+
+        # # Sort them to make sure they are both in a same order
+        # domain_url_list.sort()
+        # domain_list.sort(key=lambda x: x[0])
+
+        # # Count the number of domains
+        # domain_count = Counter(domain_list)
+        # self.logger.debug("There are {} different domains.".format(len(domain_count.keys())))
+
+        # # Get some URLs from each domain
+        # return_key_list = []
+        # for i in range(len(domain_count.keys())):
+        #     for _ in range(nb_urls_send):
+        #         one_random_key = domain_url_list[random.randint(0, len(domain_list)-1)]
+        #         return_key_list.append(one_random_key)
+        #         # Remove the key from redis after getting it (???)
+        #         self.redis_conn.delete(one_random_key[1])
+
+        # balanced_urls = []
+
+        # for i in range(len(return_key_list)):
+        #     balanced_urls.append(return_key_list[i][1])
+
+        # - - - - - - -
 
         return balanced_urls
 
