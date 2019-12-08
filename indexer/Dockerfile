@@ -1,12 +1,17 @@
-FROM python:3.7-alpine as base
-FROM base as builder
+FROM bingocrawler/core:latest AS bingocore
 
-RUN mkdir /install
-WORKDIR /install
-COPY requirements.txt /requirements.txt
-RUN pip install --install-option="--prefix=/install" -r /requirements.txt
+# required files for build
+COPY src/poetry.lock src/pyproject.toml /bingo/
 
-FROM base
-COPY --from=builder /install /usr/local
-COPY src /app
-WORKDIR /app
+# project requirements
+WORKDIR /bingo/bin
+RUN poetry self:update
+RUN poetry config settings.virtualenvs.create false
+RUN poetry install --no-interaction
+
+# copy source files and env
+COPY src /bingo/bin
+COPY .env.aws .env.local /bingo/bin/
+
+# execute
+ENTRYPOINT ["python", "/bingo/bin/indexer.py"]

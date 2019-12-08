@@ -8,8 +8,8 @@ build:
     context: ../balancer
   - image: bingocrawler/crawler
     context: ../crawler
-  # - image: bingocrawler/indexer
-  #   context: bingocore
+  - image: bingocrawler/indexer
+    context: ../indexer
 profiles:
   - name: aws
     activation:
@@ -17,15 +17,15 @@ profiles:
     deploy:
       kubectl:
         manifests:
-        - kubeconfig.storage.aws.yaml
-        - kubeconfig.crawling.yaml
-        # - kubeconfig.indexing.yaml
+        # - kubeconfig.storage.aws.yaml
+        # - kubeconfig.crawling.yaml
+        - kubeconfig.indexing.yaml
   - name: minikube
     activation:
       - kubeContext: minikube
     deploy:
       kubectl:
         manifests:
-        - kubeconfig.storage.minikube.yaml
-        - kubeconfig.crawling.yaml
-        # - kubeconfig.indexing.yaml
+        # - kubeconfig.storage.minikube.yaml
+        # - kubeconfig.crawling.yaml
+        - kubeconfig.indexing.yaml
