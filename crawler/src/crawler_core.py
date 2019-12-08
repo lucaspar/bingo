@@ -386,7 +386,7 @@ class Crawler(object):
         stream.setLevel(LOG_LEVEL)
         stream.setFormatter(ColoredFormatter(FORMAT))
 
-        self.logger = logging.getLogger('main')
+        self.logger = logging.getLogger(__name__)
         self.logger.setLevel(LOG_LEVEL)
         self.logger.addHandler(stream)
 
