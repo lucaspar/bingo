@@ -1,5 +1,9 @@
 FROM bingocrawler/core:latest AS bingocore
 
+# lxml requirement
+RUN apk add py3-lxml
+# RUN pip3 install lxml
+
 # required files for build
 COPY src/poetry.lock src/pyproject.toml /bingo/
 

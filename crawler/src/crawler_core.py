@@ -123,7 +123,7 @@ class Crawler(object):
 
             response = self.bp.request(url).next()
             response.raise_for_status()
-            soup = BeautifulSoup(response.text, "lxml")
+            soup = BeautifulSoup(response.text, "html5lib")
 
             # store to S3 bucket if in AWS
             if os.environ.get("ENABLE_S3_STORAGE") == "True":

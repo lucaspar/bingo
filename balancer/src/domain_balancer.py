@@ -29,7 +29,10 @@ class DomainBalancer(object):
         self.EXPECTED_NB_CRAWLERS = 10  # expected number of crawlers (just as reference, not updated!!)
         while True:
             try:
-                self.redis_conn = redis.Redis(host=os.environ.get("URL_MAP_HOST"))
+                self.redis_conn = redis.Redis(
+                    host=os.environ.get("URL_MAP_HOST"),
+                    decode_responses=True
+                )
                 self.redis_conn.ping()
                 self.logger.info("Balancer connected to URL Map!")
                 break
@@ -159,13 +162,31 @@ class DomainBalancer(object):
 
 
     def _get_domain_from_url(self, url):
-        """
-        Returns the domain of a URL.
-        """
-        url = url.decode()
+        """Returns the domain of a URL."""
+        # url = url.decode()
         parsed_uri = urlparse(url)
         domain = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
         return domain
+
+
+    def _rr_domains(self, domain_sets, min_qty):
+        """Round Robin set of domains for URL balancing."""
+        balanced_urls = []
+        while len(domain_sets) > 0:
+            domains = domain_sets.keys()
+            for d in list(domains):
+                url = domain_sets[d].pop()
+                balanced_urls.append(url)               # add to balanced
+                expname = 'lock_' + url
+                self.redis_conn.setex(expname, 60, url) # add expiring lock to key
+                if len(domain_sets[d]) == 0:
+                    del domain_sets[d]                  # delete domain entry if empty
+                if len(balanced_urls) >= min_qty:
+                    return balanced_urls                # got enough URLs to send
+
+        self.logger.warning("Did not get ideal qty of URLs: {} / {}".format(len(balanced_urls), min_qty))
+
+        return balanced_urls
 
 
     def _get_balanced_urls(self):
@@ -179,6 +200,9 @@ class DomainBalancer(object):
         urlmap_size = self.redis_conn.dbsize()
         self.logger.debug("URL Map has {} URLs".format(urlmap_size))
 
+        # loosely avoid race conditions in the beginning with a sleep
+        time.sleep(random.random() * 5)
+
         if urlmap_size == 0:
             self.logger.error("URL Map is empty -- nothing to balance!")
             time.sleep(5)
@@ -191,6 +215,7 @@ class DomainBalancer(object):
             max_distributed_urls = urlmap_size / self.EXPECTED_NB_CRAWLERS
             increment = min(self.MAX_URLS_SEND, max_distributed_urls)
             nb_urls_send = int(self.MIN_URLS_SEND + increment)
+            self.logger.debug("Sending at most {} URLs to crawlers".format(nb_urls_send))
 
         # ==== BALANCING ALGORITHM ====
         # for candidate in self.redis_conn.scan_iter(match='userinfo_*'):
@@ -199,9 +224,12 @@ class DomainBalancer(object):
         SCALING_FACTOR = 3
         candidate_set = set()
         for candidate in self.redis_conn.scan_iter():
-            self.logger.info(candidate)
-            expname = 'exp_' + candidate
-            if self.redis_conn.exists(expname) and self.redis_conn.ttl(expname) > 0:
+            # ignore locks
+            if candidate.startswith('lock_'):
+                continue
+            lock_name = 'lock_' + candidate
+            if self.redis_conn.exists(lock_name) and self.redis_conn.ttl(lock_name) > 0:
+                self.logger.debug("Found a URL in use, skipping...")
                 continue
             candidate_set.add(candidate)
             if len(candidate_set) > nb_urls_send * SCALING_FACTOR:
@@ -214,20 +242,11 @@ class DomainBalancer(object):
             if domain not in domain_sets:
                 domain_sets[domain] = set()
             domain_sets[domain].add(url)
+        self.logger.debug("Got URLs for {} unique domains".format(len(domain_sets)))
 
         # 3. Round-robin among domain sets popping urls from them
-        balanced_urls = []
-        while len(domain_sets) > 0:
-            domains = domain_sets.keys()
-            for d in domains:
-                url = domain_sets[d].pop()
-                balanced_urls.append(url)           # add to balanced
-                expname = 'exp_' + url
-                self.redis_conn.expire(expname, 60) # add expiring lock to key
-                if len(domain_sets[d]) == 0:
-                    del domain_sets[d]              # delete domain entry if empty
-            if len(balanced_urls) >= nb_urls_send:
-                break   # got enough URLs to send
+        balanced_urls = self._rr_domains(domain_sets, min_qty=nb_urls_send)
+        self.logger.debug("Sending {} URLs to crawler".format(len(balanced_urls)))
 
         # ==== BALANCING ALGORITHM END ====
 
@@ -271,6 +290,13 @@ class DomainBalancer(object):
         return balanced_urls
 
 
+    def _release_locks(self, metadata):
+        """Release url expiration locks."""
+        keys = [ 'lock_' + k for k in metadata.keys() ]
+        self.redis_conn.delete(*keys)
+        self.logger.debug("Released locks for {} URLs".format(len(keys)))
+
+
     def crawler_talk(self, conn):
         """
         Message exchanges between the balancer and a crawler.
@@ -309,6 +335,7 @@ class DomainBalancer(object):
 
                 # process metadata and update URL Map
                 metadata = self._process_url_metadata(ast.literal_eval(str_metadata_decode))
+                self._release_locks(metadata)
                 self.logger.debug("Saving metadata to URL Map: {}".format(pprint.pformat(metadata)))
                 self._update_url_map(conn=self.redis_conn, data=metadata)
 
