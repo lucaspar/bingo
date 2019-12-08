@@ -1,5 +1,13 @@
 # Cluster Creation Walkthrough
 
+## Versions
+
++ Ubuntu 18.04 LTS
++ Minikube v1.5.2 (for local deploys)
++ eksctl 0.10.2
++ kubectl v1.16
++ skaffold 1.0.1
+
 ## Creation
 
 ### Create reusable resources
