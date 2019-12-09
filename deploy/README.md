@@ -2,11 +2,15 @@
 
 ## Versions
 
-+ Ubuntu 18.04 LTS
-+ Minikube v1.5.2 (for local deploys)
-+ eksctl 0.11.1
-+ kubectl v1.16
-+ skaffold 1.0.1
+| Software  | Version Tested
+| --------- | --------------
+| Ubuntu    | 18.04 LTS
+| Minikube  | v1.5.2    (for local deploys)
+| eksctl    | 0.11.1    (for aws deploys)
+| aws-cli   | 1.16.299  (for aws deploys)
+| kubectl   | v1.16
+| skaffold  | 1.0.1
+| Python    | 3.6.5
 
 ---
 
@@ -27,10 +31,19 @@ minikube start --memory 4096 --cpus 2 --vm-driver=virtualbox --extra-config=apis
 # configure AWS credentials
 aws configure   # or export AWS_DEFAULT_PROFILE=my_named_profile
 
+# give the cluster a name
+CLUSTER_NAME=bingo-small-001
+
 # spawn cluster
 eksctl create cluster --version 1.14 --nodegroup-name bingo \
     --node-type t3.small --nodes 2 --nodes-min 1 --nodes-max 10 \
-    --node-ami auto --name bingo-small
+    --node-ami auto --name $CLUSTER_NAME
+
+# check kubeconfig is using aws context
+kubectl config current-context
+
+# if not, configure it with:
+aws eks update-kubeconfig --name $CLUSTER_NAME
 ```
 
 #### Deploy with Skaffold
@@ -56,7 +69,13 @@ code AWS_ACCESS_KEY_ID.txt && code AWS_SECRET_ACCESS_KEY.txt
 ### Scaling
 
 ```sh
-eksctl scale nodegroup --cluster bingo-nano -n bingo -N <NEW_NUMBER_OF_NODES>
+
+eksctl scale nodegroup --cluster $CLUSTER_NAME -n bingo -N <NEW_NUMBER_OF_NODES>
+
+# test if kubeconfig is setup for aws cluster
+kubeconfig update-kubeconfig
+aws eks update-kubeconfig --name $CLUSTER_NAME
+
 ```
 
 ### Deleting
