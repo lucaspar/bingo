@@ -6,11 +6,13 @@ import nltk
 import time
 import boto3
 import pprint
+import random
 import logging
 import traceback
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from pymongo import MongoClient
+import prometheus_client as prom
 from collections import defaultdict
 from colorlog import ColoredFormatter
 from nltk.stem import WordNetLemmatizer
@@ -21,6 +23,13 @@ from nltk.tokenize import sent_tokenize, word_tokenize
 nltk_deps = ['punkt', 'stopwords', 'wordnet', 'averaged_perceptron_tagger']
 for d in nltk_deps:
     nltk.download(d)
+
+# setup metrics
+prom_processed_files = prom.Counter(
+    name='bingo_indexer_processed_files_total',
+    documentation='Total number of indexed HTML documents',
+    labelnames=['doc', 'url']
+)
 
 
 def config_logging():
@@ -55,9 +64,11 @@ class indexer(object):
         self.II_DB_PORT = int(os.environ.get('INVERTED_INDEX_PORT', 27017))
 
         # other params
-        self.nb_file_fetch = 5
-        self.s3 = boto3.resource('s3')
-        self.bucket = self.s3.Bucket(self.BUCKET_NAME)
+        self.LOCK_TTL = 60                      # TTL for indexing lock for S3 objects
+        self.nb_file_fetch = 10                 # number of objects for processing batch
+        self.s3_client = boto3.client('s3')
+        self.s3_resource = boto3.resource('s3')
+        self.bucket = self.s3_resource.Bucket(self.BUCKET_NAME)
 
         # establish connection
         self.ii_client, self.ii_db = self._create_ii_conn()
@@ -75,6 +86,30 @@ class indexer(object):
             if not daemon:
                 break
 
+    def _lock_s3_object(self, key):
+        """Attempts to lock S3 object for indexer."""
+
+        obj_head = self.s3_client.head_object(Bucket=self.BUCKET_NAME, Key=key)
+        metadata = obj_head["Metadata"]
+        self.logger.info("S3 Object Metadata: {}".format(metadata))
+
+        # lock object
+        if 'indexing_lock' not in metadata or \
+            float(metadata['indexing_lock']) + self.LOCK_TTL < time.time():
+
+            metadata["indexing_lock"] = str(time.time())
+            self.s3_client.copy_object(
+                Bucket=self.BUCKET_NAME,
+                Key=key,
+                Metadata=metadata,
+                MetadataDirective='REPLACE',
+                CopySource=self.BUCKET_NAME + '/' + key,
+            )
+
+            return True
+
+        return False
+
 
     def _fetch_s3_obj(self):
         """
@@ -85,26 +120,20 @@ class indexer(object):
 
         file_key_list = []
 
-        # Check the number of files in the S3
-        # TODO: How to prevent more than one indexer to
-        #  fetch the list at the same time.
-        for bucket_object in self.bucket.objects.all():
-            file_key_list.append(bucket_object.key)
+        # get object keys to fetch
+        for obj_summary in self.bucket.objects.all():
+            if self._lock_s3_object(obj_summary.key):
+                file_key_list.append(obj_summary.key)
+                if len(file_key_list) >= self.nb_file_fetch:
+                    break
 
-        self.logger.debug("There are {} files in S3.".format(len(file_key_list)))
+        if len(file_key_list) == 0:
+            self.logger.warn("There are no documents in S3. Nothing to do now...")
+            time.sleep(10)
+        else:
+            self.logger.debug("Processing {} objects from S3.".format(len(file_key_list)))
 
-        # TODO: How to decide the number of files we should fetch??
-        if (len(file_key_list)) >= self.nb_file_fetch:
-            file_key_list_return = file_key_list[0:self.nb_file_fetch]
-            return file_key_list_return
-
-        elif (len(file_key_list) <= self.nb_file_fetch) and (len(file_key_list) > 0):
-            file_key_list_return = file_key_list[0]
-            return file_key_list_return
-
-        self.logger.warn("There are no documents in S3. Nothing to do...")
-        time.sleep(10)
-        return []
+        return file_key_list
 
 
     def _load_s3_html(self, file_key):
@@ -115,7 +144,7 @@ class indexer(object):
         Returns:
             The decoded file contents.
         """
-        s3_obj = self.s3.Object(self.BUCKET_NAME, file_key)
+        s3_obj = self.s3_resource.Object(self.BUCKET_NAME, file_key)
         htmldoc = s3_obj.get()['Body'].read().decode('utf-8')
 
         return htmldoc
@@ -123,7 +152,7 @@ class indexer(object):
 
     def _remove_s3_object(self, file_key):
         """Deletes object from S3."""
-        return self.s3.Object(self.BUCKET_NAME, file_key).delete()
+        return self.s3_resource.Object(self.BUCKET_NAME, file_key).delete()
 
 
     def _create_ii_conn(self):
@@ -185,24 +214,11 @@ class indexer(object):
 
             # stemming & lemmatizing
             wordnet_lem = WordNetLemmatizer()
+            for sentence in doc_sentences:
 
-            # tokenizing
-            # TODO: LUCAS -- WHY 5:10 ??
-            for one_sentence in doc_sentences[5:10]:
-                one_sentence = one_sentence.rstrip()
-                sentence_words = nltk.word_tokenize(one_sentence)
-
-                for word in sentence_words:
-                    word = word.lower()
-                    word = ''.join([i for i in word if not i.isdigit()])
-
-                    # removing punctuation
-                    if word and word in punctuations:
-                        try:
-                            sentence_words.remove(word)
-                        except ValueError:
-                            self.logger.debug('Failed removing word {}'.format(word))
-                            continue
+                sentence = sentence.rstrip()                    # trimming
+                sentence = re.sub('[\W_]+', ' ', sentence)      # removing unknown characters
+                sentence_words = nltk.word_tokenize(sentence)   # tokenizing
 
                 # removing stopwords
                 filtered_list = [word for word in sentence_words if word not in stopwords.words('english')]
@@ -221,6 +237,8 @@ class indexer(object):
             # remove file from S3
             # self._remove_s3_object(file_key=file_key)
             self.logger.debug("Processed doc removed from storage: {}".format(file_key))
+            label_dict = { 'doc': file_key, 'url': '' }
+            prom_processed_files.labels(**label_dict).inc()
 
 
         return result_list
@@ -258,6 +276,9 @@ if __name__ == '__main__':
     dotenv_path = sys.argv[1] if len(sys.argv) > 1 else '.env'
     load_dotenv(dotenv_path=dotenv_path)
     logger = config_logging()
+
+    # start up the server to expose the metrics.
+    prom.start_http_server(9090)
 
     # run indexer
     while True:

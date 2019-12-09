@@ -15,6 +15,7 @@ pymongo = "^3.9"
 colorlog = "^4.0"
 yapf = "^0.29.0"
 rope = "^0.14.0"
+prometheus_client = "^0.7.1"
 
 [tool.poetry.dev-dependencies]
 
