@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from pymongo import MongoClient
 import prometheus_client as prom
-from collections import defaultdict
+from collections import defaultdict, abc
 from colorlog import ColoredFormatter
 from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords, wordnet
@@ -65,7 +65,7 @@ class indexer(object):
 
         # other params
         self.LOCK_TTL = 60                      # TTL for indexing lock for S3 objects
-        self.processing_batch_size = 10                 # number of objects for processing batch
+        self.processing_batch_size = 1          # number of objects for processing batch
         self.s3_client = boto3.client('s3')
         self.s3_resource = boto3.resource('s3')
         self.bucket = self.s3_resource.Bucket(self.BUCKET_NAME)
@@ -79,9 +79,9 @@ class indexer(object):
         while True:
 
             s3_objects = self._fetch_s3_obj()           # fetch
-            tokens = self._process_text(s3_objects)     # process
-            index = self._create_inverted_index(tokens) # index
-            self._update_inverted_index(index)          # store
+            doc_words = self._process_text(s3_objects)  # process
+            ii = self._create_inverted_index(doc_words) # index
+            self._update_inverted_index(ii)             # store
 
             if not daemon:
                 break
@@ -91,7 +91,6 @@ class indexer(object):
 
         obj_head = self.s3_client.head_object(Bucket=self.BUCKET_NAME, Key=key)
         metadata = obj_head["Metadata"]
-        self.logger.info("S3 Object Metadata: {}".format(metadata))
 
         # lock object
         if 'indexing_lock' not in metadata or \
@@ -149,9 +148,10 @@ class indexer(object):
             The decoded file contents.
         """
         s3_obj = self.s3_resource.Object(self.BUCKET_NAME, file_key)
+        url = s3_obj.metadata['url'] if 'url' in s3_obj.metadata else ''
         htmldoc = s3_obj.get()['Body'].read().decode('utf-8')
 
-        return htmldoc
+        return url, htmldoc
 
 
     def _remove_s3_object(self, file_key):
@@ -192,15 +192,14 @@ class indexer(object):
         """
 
         punctuations = ")?:!.,;(;,'#$%&1234567890-=^~@+*[]\{\}<>/_"
-        result_list = []
+        doc_tokens = dict()
 
-        for file_key in (s3_key_list):
-            file_word_list = []
+        for file_key in s3_key_list:
 
-            self.logger.debug("Processing {}...".format(file_key))
-            file = self._load_s3_html(file_key=file_key)
+            file_words = []
+            url, doc = self._load_s3_html(file_key=file_key)
 
-            document = BeautifulSoup(file, features="html.parser").findAll(text=True)
+            document = BeautifulSoup(doc, features="html.parser").findAll(text=True)
             text = ''
             blacklist = [
                 '[document]', 'noscript', 'header', 'html',
@@ -214,7 +213,6 @@ class indexer(object):
                         text += t + ' '
 
             doc_sentences = nltk.sent_tokenize(text)
-            self.logger.debug("Sentences in file: {}".format(len(doc_sentences)))
 
             # stemming & lemmatizing
             wordnet_lem = WordNetLemmatizer()
@@ -225,53 +223,79 @@ class indexer(object):
                 sentence_words = nltk.word_tokenize(sentence)   # tokenizing
 
                 # removing stopwords
-                filtered_list = [word for word in sentence_words if word not in stopwords.words('english')]
+                swords = stopwords.words('english')
+                best_words = [ w for w in sentence_words if w not in swords ]
 
                 # lemmatizing
-                for idx, word in enumerate(filtered_list):
+                for idx, word in enumerate(best_words):
                     pos = self._get_wordnet_pos(word)
-                    sentence_words[idx] = wordnet_lem.lemmatize(word, pos=pos)
+                    best_words[idx] = wordnet_lem.lemmatize(word, pos=pos)
 
-                file_word_list += sentence_words
+                file_words += best_words
 
-            # remove duplicates
-            new_list = list(set(file_word_list))
-            result_list.append(new_list)
+            doc_tokens[url] = file_words
 
             # remove file from S3
             # self._remove_s3_object(file_key=file_key)
-            self.logger.debug("Processed doc removed from storage: {}".format(file_key))
-            label_dict = { 'doc': file_key, 'url': '' }
+            self.logger.debug("Processed doc removed from storage: {}".format(url))
+            label_dict = { 'doc': file_key, 'url': url }
             prom_processed_files.labels(**label_dict).inc()
 
 
-        return result_list
+        return doc_tokens
 
 
-    def _create_inverted_index(self, tokens):
+    def _create_inverted_index(self, doc_words):
         """
-        Create inverted index for the processed text.
+        Create inverted index for a set of processed documents.
+        Args:
+            doc_words: tokens grouped by document.
         Returns:
             inverted index
         """
-        inverted_index = defaultdict(list)
+        # creates default structure
+        dd = lambda: defaultdict(lambda: 0)
+        inverted_index = defaultdict(dd)
 
-        for i, tokens in enumerate(tokens):
-            for token in tokens:
-                inverted_index[token].append(i)
-        self.logger.info("Created inverted index with length {}".format(len(inverted_index)))
+        # populate inverted index
+        for doc, tokens in doc_words.items():
+            for tk in tokens:
+                inverted_index[tk][doc] += 1
+
+        self.logger.info("Inverted index length: {}".format(len(inverted_index)))
 
         return inverted_index
 
 
-    def _update_inverted_index(self, data):
+    def _update(self, d, u):
+        for k, v in u.items():
+            if isinstance(v, abc.Mapping):
+                d[k] = self._update(self, d.get(k, {}), v)
+            else:
+                d[k] = v
+        return d
+
+
+    def _update_inverted_index(self, inverted_index):
         """Save inverted index into MongoDB."""
-        posts = self.ii_db.posts
-        try:
-            result = posts.insert_one(data)
-            self.logger.debug('One post: {0}'.format(result.inserted_id))
-        except Exception as err:
-            self.logger.error('Something went wrong: {}'.format(err))
+        self.logger.info("Updating inverted index...")
+        index = self.ii_db.index
+        while True:
+            try:
+                current_ii = index.find_one({})
+                self.logger.info(type(current_ii))
+                self.logger.info(current_ii.keys())
+                if len(current_ii) == 0:
+                    current_ii = dict()
+                current_ii = self._update(current_ii, inverted_index)
+
+                result = index.update_one({}, current_ii, upsert=True)
+                self.logger.debug('One post: {}'.format(result.inserted_id))
+                break
+            except Exception as err:
+                self.logger.error('Error updating inverted index: {}'.format(err))
+                time.sleep(30)
+                continue
 
 
 if __name__ == '__main__':
