@@ -4,21 +4,13 @@
 
 + Ubuntu 18.04 LTS
 + Minikube v1.5.2 (for local deploys)
-+ eksctl 0.10.2
++ eksctl 0.11.1
 + kubectl v1.16
 + skaffold 1.0.1
 
+---
+
 ## Creation
-
-### Create reusable resources
-
-```sh
-# create files
-code AWS_ACCESS_KEY_ID.txt && code AWS_SECRET_ACCESS_KEY.txt
-
-# create secrets and configmaps
-./create_resources.sh
-```
 
 ### Create cluster
 
@@ -32,6 +24,10 @@ minikube start --memory 4096 --cpus 2 --vm-driver=virtualbox --extra-config=apis
 #### `Option B:` AWS (this will cost $)
 
 ```sh
+# configure AWS credentials
+aws configure   # or export AWS_DEFAULT_PROFILE=my_named_profile
+
+# spawn cluster
 eksctl create cluster --version 1.14 --nodegroup-name bingo \
     --node-type t3.small --nodes 2 --nodes-min 1 --nodes-max 10 \
     --node-ami auto --name bingo-small
@@ -42,6 +38,18 @@ eksctl create cluster --version 1.14 --nodegroup-name bingo \
 ```sh
 skaffold dev
 ```
+
+### Create reusable resources
+
+```sh
+# create files
+code AWS_ACCESS_KEY_ID.txt && code AWS_SECRET_ACCESS_KEY.txt
+
+# create secrets and configmaps
+./create_resources.sh
+```
+
+---
 
 ## AWS Cluster Operations
 
@@ -55,11 +63,13 @@ eksctl scale nodegroup --cluster bingo-nano -n bingo -N <NEW_NUMBER_OF_NODES>
 
 ```sh
 # this may take ~15min to complete
-eksctl delete cluster --name=bingo-small
+eksctl delete cluster --name=bingo-small --wait
 eksctl get clusters
 ```
 
 > The cluster will now be created. You can [monitor](#Monitoring) it using a browser.
+
+---
 
 ## Networking
 
@@ -91,6 +101,8 @@ nslookup balancing-service
 nslookup urlmap-service
 ```
 
+---
+
 ## Monitoring
 
 ### Local dashboard
@@ -121,6 +133,18 @@ kubectl port-forward -n monitoring $(kubectl get pods -n monitoring --selector=a
 kubectl port-forward -n monitoring $(kubectl get pods -n monitoring --selector=app=grafana --output=jsonpath="{.items..metadata.name}") 3000 &
 ```
 
+#### Monitoring Cleanup
+
+> `[ Danger ]` This will remove stored measurements!
+
+```sh
+# just set the used namespace to 'monitoring':
+kubectl delete -n monitoring \
+secrets,configmaps,daemonsets,replicasets,services,deployments,pods,rc,statefulsets,pv,pvc,sc,ing --all
+```
+
+---
+
 ## Storage
 
 ### List persistent volumes and claims
@@ -135,14 +159,16 @@ kubectl get pvc
 ### Delete volatile `kubectl` resources
 
 ```sh
-kubectl delete -n default daemonsets,replicasets,services,deployments,pods,rc,ing --all
+kubectl delete -n default \
+daemonsets,replicasets,services,deployments,pods,rc,ing --all
 ```
 
 #### `[ Danger ]` Delete **persistent data** only
 
 ```sh
 # stateful sets, persistent volumes, persistent volume claims, and storage classes
-kubectl delete -n default statefulsets,pv,pvc,sc,ing --all
+kubectl delete -n default \
+statefulsets,pv,pvc,sc,ing --all
 ```
 
 #### `[ Danger ]` Delete everything created but `Secrets` and `ConfigMaps`
@@ -150,7 +176,8 @@ kubectl delete -n default statefulsets,pv,pvc,sc,ing --all
 > Persistent data will be deleted!
 
 ```sh
-kubectl delete -n default secrets,configmaps,daemonsets,replicasets,services,deployments,pods,rc,statefulsets,pv,pvc,sc,ing --all
+kubectl delete -n default \
+secrets,configmaps,daemonsets,replicasets,services,deployments,pods,rc,statefulsets,pv,pvc,sc,ing --all
 ```
 
 ---
