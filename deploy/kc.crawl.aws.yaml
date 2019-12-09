@@ -1,0 +1,35 @@
+# ===========
+# AWS STORAGE
+# ===========
+# Persistent volume claim for URL Map (Redis)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-urlmap
+  labels:
+    app: bingo
+    service: urlmap-service
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: 'sc-aws-urlmap'
+  resources:
+    requests:
+      storage: 10Gi
+---
+# Storage class
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: sc-aws-urlmap
+  labels:
+    app: bingo
+    service: urlmap-service
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+provisioner: kubernetes.io/aws-ebs
+allowVolumeExpansion: true
+parameters:
+  type: io1
+  iopsPerGB: "10"
+  fsType: ext4
+  encrypted: "false"

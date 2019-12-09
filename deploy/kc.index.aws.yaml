@@ -1,34 +1,36 @@
 # ===========
 # AWS STORAGE
 # ===========
-# Persistent volume claim for URL Map (Redis)
+# Persistent volume claim for Inverted Index (Mongo)
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: pvc-urlmap
+  name: pvc-invidx
   labels:
     app: bingo
-    service: urlmap-service
+    service: inverted-index-service
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: 'sc-aws'
+  storageClassName: 'sc-aws-invidx'
   resources:
     requests:
       storage: 10Gi
 ---
 # Storage class
-apiVersion: storage.k8s.io/v1
 kind: StorageClass
+apiVersion: storage.k8s.io/v1
 metadata:
-  name: sc-aws
+  name: sc-aws-invidx
   labels:
     app: bingo
-    service: urlmap-service
+    service: inverted-index-service
 reclaimPolicy: Retain
+volumeBindingMode: Immediate
 provisioner: kubernetes.io/aws-ebs
 allowVolumeExpansion: true
 parameters:
   type: io1
-  iopsPerGB: "10"
+  iopsPerGB: "5"
   fsType: ext4
   encrypted: "false"
+---

@@ -5,7 +5,7 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: sc-local
+  name: sc-local-urlmap
   labels:
     app: bingo
     service: urlmap-service
@@ -18,14 +18,14 @@ allowVolumeExpansion: true
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: pv-local
+  name: pv-local-urlmap
 spec:
   capacity:
     storage: 10Gi
   accessModes:
   - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
-  storageClassName: sc-local
+  storageClassName: sc-local-urlmap
   # https://kubernetes.io/docs/setup/learning-environment/minikube/#persistent-volumes
   hostPath:
     path: /data
@@ -48,7 +48,7 @@ metadata:
     service: urlmap-service
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: 'sc-local'
+  storageClassName: 'sc-local-urlmap'
   resources:
     requests:
       storage: 10Gi

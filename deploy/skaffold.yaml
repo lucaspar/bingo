@@ -17,15 +17,17 @@ profiles:
     deploy:
       kubectl:
         manifests:
-        - kubeconfig.storage.aws.yaml
-        - kubeconfig.crawling.yaml
-        - kubeconfig.indexing.yaml
+        - kc.crawl.yaml
+        - kc.crawl.aws.yaml
+        - kc.index.yaml
+        - kc.index.aws.yaml
   - name: minikube
     activation:
       - kubeContext: minikube
     deploy:
       kubectl:
         manifests:
-        - kubeconfig.storage.minikube.yaml
-        - kubeconfig.crawling.yaml
-        - kubeconfig.indexing.yaml
+        # - kc.crawl.yaml
+        # - kc.crawl.minikube.yaml
+        - kc.index.yaml
+        - kc.index.minikube.yaml

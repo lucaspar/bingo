@@ -1,0 +1,40 @@
+# =============
+# LOCAL STORAGE
+# =============
+# Storage class [ local ]
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: sc-local-invidx
+  labels:
+    app: bingo
+    service: inverted-index-service
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+provisioner: kubernetes.io/no-provisioner
+allowVolumeExpansion: true
+---
+# Persistent volume for minikube
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-local-invidx
+  labels:
+    app: bingo
+    service: inverted-index-service
+spec:
+  storageClassName: sc-local-invidx
+  capacity:
+    storage: 5Gi
+  accessModes: [ "ReadWriteOnce" ]
+  hostPath:
+    path: "/mnt/mongo_data"
+  # nodeAffinity:
+  #   required:
+  #     nodeSelectorTerms:
+  #     - matchExpressions:
+  #       - key: kubernetes.io/hostname
+  #         operator: In
+  #         values:
+  #         - minikube
+---

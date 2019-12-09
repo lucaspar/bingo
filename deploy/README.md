@@ -25,7 +25,8 @@ code AWS_ACCESS_KEY_ID.txt && code AWS_SECRET_ACCESS_KEY.txt
 #### `Option A:` Local
 
 ```sh
-minikube start --memory 4096 --cpus 2 --vm-driver=virtualbox
+minikube start --memory 4096 --cpus 2 --vm-driver=virtualbox --extra-config=apiserver.runtime-config=storage.k8s.io/v1=true
+
 ```
 
 #### `Option B:` AWS (this will cost $)
@@ -108,7 +109,7 @@ minikube dashboard
 
 ```sh
 # start prometheus and grafana
-kubectl apply -f kubeconfig.monitoring.yaml
+kubectl apply -f kc.monitoring.yaml
 
 # permission fix
 real_user=$USER

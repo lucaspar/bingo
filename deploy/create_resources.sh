@@ -24,6 +24,6 @@ kubectl create secret generic deploy --from-literal=ENV_FILE=.env.$DEPLOY_ENV
 kubectl delete configmap --ignore-not-found redisconfig
 kubectl delete configmap --ignore-not-found -n monitoring prometheus-server-conf
 kubectl create configmap redisconfig --from-file=../balancer/redis.conf
-kubectl apply -f configmap-prometheus-server.yaml
+kubectl apply -f prometheus.configmap.yaml
 
 echo " > Resources created for '$DEPLOY_ENV' environment!"

@@ -6,10 +6,12 @@ apiVersion: v1
 kind: Service
 metadata:
   name: indexing-service
+  labels:
+    app: bingo
   annotations:
-      prometheus.io/scrape: 'true'
-      prometheus.io/path:   /metrics
-      prometheus.io/port:   '9090'
+    prometheus.io/scrape: 'true'
+    prometheus.io/path:   /metrics
+    prometheus.io/port:   '9090'
 spec:
   selector:
     service: indexing-service
@@ -23,6 +25,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: inverted-index-service
+  labels:
+    app: bingo
 spec:
   selector:
     service: inverted-index-service
@@ -38,7 +42,6 @@ metadata:
   name: mongo
   labels:
     app: bingo
-    service: inverted-index-service
 spec:
   ports:
   - name: inverted-index
@@ -50,42 +53,14 @@ spec:
 # ====
 # Pods
 # ====
-# # Storage class [ AWS ]
-# kind: StorageClass
-# apiVersion: storage.k8s.io/v1
-# metadata:
-#   name: sc-index
-#   labels:
-#     app: bingo
-#     service: inverted-index-service
-# reclaimPolicy: Retain
-# volumeBindingMode: Immediate
-# provisioner: kubernetes.io/aws-ebs
-# allowVolumeExpansion: true
-# parameters:
-#   type: io1
-#   iopsPerGB: "5"
-#   fsType: ext4
-#   encrypted: "false"
-# ---
-# Storage class [ local ]
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: sc-index
-  labels:
-    app: bingo
-    service: inverted-index-service
-reclaimPolicy: Retain
-volumeBindingMode: Immediate
-provisioner: kubernetes.io/no-provisioner
-allowVolumeExpansion: true
----
 # inverted index (mongodb) statefulset
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: mongo
+  labels:
+    app: bingo
+    service: inverted-index-service
 spec:
   serviceName: "mongo"
   selector:
@@ -109,12 +84,12 @@ spec:
           - mongod
           - "--replSet"
           - rs0
-          - "--smallfiles"
-          - "--noprealloc"
+          # - "--smallfiles"
+          # - "--noprealloc"
         ports:
         - containerPort: 27017
         volumeMounts:
-        - name: mongo-persistent-storage
+        - name: mongo-pvc
           mountPath: /data/db
       - name: mongo-sidecar
         image: cvallance/mongo-k8s-sidecar
@@ -123,14 +98,13 @@ spec:
           value: "role=mongo,environment=test"
   volumeClaimTemplates:
   - metadata:
-      name: mongo-persistent-storage
-      annotations:
-        volume.beta.kubernetes.io/storage-class: "sc-index"
+      name: mongo-pvc
     spec:
+      storageClassName: sc-local-invidx
       accessModes: [ "ReadWriteOnce" ]
       resources:
         requests:
-          storage: 10Gi
+          storage: 2Gi
 ---
 # ======================
 # Deployments / replicas
