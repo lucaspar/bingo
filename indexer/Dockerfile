@@ -13,5 +13,7 @@ RUN poetry install --no-interaction
 COPY src /bingo/bin
 COPY .env.aws .env.local /bingo/bin/
 
+EXPOSE 9090
+
 # execute
 ENTRYPOINT ["python", "/bingo/bin/indexer.py"]

@@ -38,6 +38,7 @@ wrapt = "=1.11.2"
 coloredlogs = "^10.0"
 colorlog = "^4.0"
 html5lib = "^1.0"
+prometheus_client = "^0.7.1"
 
 [tool.poetry.dev-dependencies]
 

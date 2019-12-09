@@ -9,11 +9,24 @@ import threading
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from time import time as timer
+import prometheus_client as prom
 from fake_useragent import UserAgent
 from colorlog import ColoredFormatter
 from multiprocessing.pool import ThreadPool
 
 urllib3.disable_warnings()
+# prometheus counters for metrics
+prom_success_requests = prom.Counter(
+    name='bingo_crawler_requests_success_total',
+    documentation='Total number of successful HTML requests',
+    labelnames=['url', 'status_code', 'size']
+)
+prom_failed_requests = prom.Counter(
+    name='bingo_crawler_requests_failed_total',
+    documentation='Total number of failed HTML requests',
+    labelnames=['url', 'reason']
+)
+
 
 class BingoProxy(object):
 
@@ -244,9 +257,18 @@ class BingoProxy(object):
                     response = requests.get(url, proxies=proxy_protocols(proxy), timeout=self._CALL_TIMEOUT, verify=False)
                 if response:
                     self.logger.debug("Request succeeded: {}".format(url))
+                    label_dict = {
+                        'url': url,
+                        'status_code': response.status_code,
+                        'size': len(response.content),
+                    }
+                    prom_success_requests.labels(**label_dict).inc()
                     break
 
             except requests.exceptions.ProxyError as e:
+
+                # count failure to prometheus metrics
+                prom_failed_requests.labels(url=url, reason="proxy_failure").inc()
 
                 # proxy failed, remove from list
                 self._remove_proxy(proxy, reason="Proxy has failed")
@@ -265,9 +287,13 @@ class BingoProxy(object):
                     proxy = random.choice(self.proxy_list)
 
             except requests.exceptions.ConnectTimeout as e:
+                # count failure to prometheus metrics
+                prom_failed_requests.labels(url=url, reason="timeout").inc()
                 self.logger.warn("Request timeout. Retrying another proxy... \n{}".format(str(e)))
 
             except Exception as e:
+                # count failure to prometheus metrics
+                prom_failed_requests.labels(url=url, reason="unknown").inc()
                 self.logger.warn("Unknown error: {}".format(str(e)))
 
         return response

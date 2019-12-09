@@ -25,7 +25,7 @@ code AWS_ACCESS_KEY_ID.txt && code AWS_SECRET_ACCESS_KEY.txt
 #### `Option A:` Local
 
 ```sh
-minikube start
+minikube start --memory 4096 --cpus 2 --vm-driver=virtualbox
 ```
 
 #### `Option B:` AWS (this will cost $)

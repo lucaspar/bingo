@@ -4,10 +4,10 @@ metadata:
   name: deploy
 build:
   artifacts:
-  - image: bingocrawler/balancer
-    context: ../balancer
-  - image: bingocrawler/crawler
-    context: ../crawler
+  # - image: bingocrawler/balancer
+  #   context: ../balancer
+  # - image: bingocrawler/crawler
+  #   context: ../crawler
   - image: bingocrawler/indexer
     context: ../indexer
 profiles:
