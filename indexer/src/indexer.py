@@ -65,7 +65,7 @@ class indexer(object):
 
         # other params
         self.LOCK_TTL = 60                      # TTL for indexing lock for S3 objects
-        self.nb_file_fetch = 10                 # number of objects for processing batch
+        self.processing_batch_size = 10                 # number of objects for processing batch
         self.s3_client = boto3.client('s3')
         self.s3_resource = boto3.resource('s3')
         self.bucket = self.s3_resource.Bucket(self.BUCKET_NAME)
@@ -86,7 +86,7 @@ class indexer(object):
             if not daemon:
                 break
 
-    def _lock_s3_object(self, key):
+    def _acquire_object_lock(self, key):
         """Attempts to lock S3 object for indexer."""
 
         obj_head = self.s3_client.head_object(Bucket=self.BUCKET_NAME, Key=key)
@@ -118,18 +118,22 @@ class indexer(object):
             List of document keys in S3.
         """
 
-        file_key_list = []
+        file_key_list = list()
 
         # get object keys to fetch
         for obj_summary in self.bucket.objects.all():
-            if self._lock_s3_object(obj_summary.key):
+            if self._acquire_object_lock(obj_summary.key):
                 file_key_list.append(obj_summary.key)
-                if len(file_key_list) >= self.nb_file_fetch:
+                if len(file_key_list) >= self.processing_batch_size:
                     break
 
+        # no objects available, just wait a while
         if len(file_key_list) == 0:
-            self.logger.warn("There are no documents in S3. Nothing to do now...")
-            time.sleep(10)
+            sleep_time = self.LOCK_TTL / 4
+            self.logger.warning("There are no documents in S3. Sleeping for {}s...".format(sleep_time))
+            time.sleep(sleep_time)
+
+        # objects available
         else:
             self.logger.debug("Processing {} objects from S3.".format(len(file_key_list)))
 

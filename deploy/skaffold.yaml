@@ -4,10 +4,10 @@ metadata:
   name: deploy
 build:
   artifacts:
-  # - image: bingocrawler/balancer
-  #   context: ../balancer
-  # - image: bingocrawler/crawler
-  #   context: ../crawler
+  - image: bingocrawler/balancer
+    context: ../balancer
+  - image: bingocrawler/crawler
+    context: ../crawler
   - image: bingocrawler/indexer
     context: ../indexer
 profiles:
@@ -17,8 +17,8 @@ profiles:
     deploy:
       kubectl:
         manifests:
-        # - kubeconfig.storage.aws.yaml
-        # - kubeconfig.crawling.yaml
+        - kubeconfig.storage.aws.yaml
+        - kubeconfig.crawling.yaml
         - kubeconfig.indexing.yaml
   - name: minikube
     activation:
@@ -26,6 +26,6 @@ profiles:
     deploy:
       kubectl:
         manifests:
-        # - kubeconfig.storage.minikube.yaml
-        # - kubeconfig.crawling.yaml
+        - kubeconfig.storage.minikube.yaml
+        - kubeconfig.crawling.yaml
         - kubeconfig.indexing.yaml

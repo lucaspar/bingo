@@ -13,6 +13,7 @@
 1. Number of instances
 1. Number of pods
 1. Throughput of crawled documents
+1. Throughput of indexed documents
 1. Inbound Network Bandwidth
 1. CPU usage
 1. Memory usage
