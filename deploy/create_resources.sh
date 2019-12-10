@@ -4,7 +4,13 @@ set -e
 # choose deploy environment (local or aws):
 # DEPLOY_ENV=local
 DEPLOY_ENV=$(kubectl config current-context)
-if [ DEPLOY_ENV != aws ]; then
+echo $DEPLOY_ENV
+if [[ $DEPLOY_ENV == "minikube" ]]; then
+    DEPLOY_ENV=local
+elif [[ $DEPLOY_ENV == *"eksctl"* ]]; then
+    DEPLOY_ENV=aws
+else
+    echo " > Context not recognized :: using 'local'"
     DEPLOY_ENV=local
 fi
 export DEPLOY_ENV
