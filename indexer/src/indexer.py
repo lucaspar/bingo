@@ -64,8 +64,8 @@ class indexer(object):
         self.II_DB_PORT = int(os.environ.get('INVERTED_INDEX_PORT', 27017))
 
         # other params
-        self.LOCK_TTL = 60                      # TTL for indexing lock for S3 objects
-        self.processing_batch_size = 1          # number of objects for processing batch
+        self.LOCK_TTL = 120                     # TTL for indexing lock for S3 objects
+        self.processing_batch_size = 5          # number of objects for processing batch
         self.s3_client = boto3.client('s3')
         self.s3_resource = boto3.resource('s3')
         self.bucket = self.s3_resource.Bucket(self.BUCKET_NAME)
@@ -75,13 +75,16 @@ class indexer(object):
 
 
     def run(self, daemon=True):
-        """Run autonomously."""
+        """Run autonomously.
+        Args:
+            daemon: if True, keeps processing multiple batches.
+        """
         while True:
 
             s3_objects = self._fetch_s3_obj()           # fetch
             doc_words = self._process_text(s3_objects)  # process
             ii = self._create_inverted_index(doc_words) # index
-            self._update_inverted_index(ii)             # store
+            # self._update_inverted_index(ii)             # store
 
             if not daemon:
                 break

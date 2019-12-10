@@ -53,7 +53,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": null,
-  "iteration": 1575945136887,
+  "iteration": 1575945136890,
   "links": [],
   "panels": [
     {
@@ -1188,7 +1188,7 @@
     ]
   },
   "time": {
-    "from": "now-15m",
+    "from": "2019-12-10T03:29:30.000Z",
     "to": "now"
   },
   "timepicker": {
@@ -1219,5 +1219,5 @@
   "timezone": "",
   "title": "BINGO | Dashboard",
   "uid": "W9XQaGaWk",
-  "version": 3
+  "version": 4
 }

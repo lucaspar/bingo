@@ -428,4 +428,5 @@ if __name__ == "__main__":
                 crawler.sock_balancer.close()
             exit()
         except:
+            crawler.logger.critical("RIP Crawler:\n\n{}".format(traceback.format_exc()))
             continue

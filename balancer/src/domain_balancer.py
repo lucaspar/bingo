@@ -79,16 +79,20 @@ class DomainBalancer(object):
         initial_url_list = {
             "https://en.wikipedia.org/wiki/Main_Page": {
                 "status": "",
-                "timestamp": ""
+                "timestamp": "",
+            },
+            'https://www.foxnews.com/': {
+                "status": "",
+                "timestamp": "",
             },
             "https://www.nd.edu": {
                 "status": "",
-                "timestamp": ""
+                "timestamp": "",
             },
             "http://cnn.com/": {
                 "status": "",
-                "timestamp": ""
-            }
+                "timestamp": "",
+            },
         }
 
         # Save the data into redis
@@ -182,11 +186,11 @@ class DomainBalancer(object):
                 if len(domain_sets[d]) == 0:
                     del domain_sets[d]                  # delete domain entry if empty
                 if len(balanced_urls) >= min_qty:
-                    return balanced_urls                # got enough URLs to send
+                    return balanced_urls, True          # got enough URLs to send
 
         self.logger.warning("Did not get ideal qty of URLs: {} / {}".format(len(balanced_urls), min_qty))
 
-        return balanced_urls
+        return balanced_urls, False
 
 
     def _get_balanced_urls(self):
@@ -217,75 +221,38 @@ class DomainBalancer(object):
             nb_urls_send = int(self.MIN_URLS_SEND + increment)
             self.logger.debug("Sending at most {} URLs to crawlers".format(nb_urls_send))
 
-        # ==== BALANCING ALGORITHM ====
         # for candidate in self.redis_conn.scan_iter(match='userinfo_*'):
+        is_enough = False
+        balanced_urls = list()
+        while not is_enough:
 
-        # 1. Get a set of candidate urls ( len(set) >> nb_urls_send ) without locks related
-        SCALING_FACTOR = 3
-        candidate_set = set()
-        for candidate in self.redis_conn.scan_iter():
-            # ignore locks
-            if candidate.startswith('lock_'):
-                continue
-            lock_name = 'lock_' + candidate
-            if self.redis_conn.exists(lock_name) and self.redis_conn.ttl(lock_name) > 0:
-                self.logger.debug("Found a URL in use, skipping...")
-                continue
-            candidate_set.add(candidate)
-            if len(candidate_set) > nb_urls_send * SCALING_FACTOR:
-                break
+            # 1. Get a set of candidate urls ( len(set) >> nb_urls_send ) without locks related
+            SCALING_FACTOR = 3
+            candidate_set = set()
+            for candidate in self.redis_conn.scan_iter():
+                # ignore locks
+                if candidate.startswith('lock_'):
+                    continue
+                lock_name = 'lock_' + candidate
+                if self.redis_conn.exists(lock_name) and self.redis_conn.ttl(lock_name) > 0:
+                    continue
+                candidate_set.add(candidate)
+                if len(candidate_set) > nb_urls_send * SCALING_FACTOR:
+                    break
 
-        # 2. Group URL domains in sets
-        domain_sets = dict()
-        for url in candidate_set:
-            domain = self._get_domain_from_url(url)
-            if domain not in domain_sets:
-                domain_sets[domain] = set()
-            domain_sets[domain].add(url)
-        self.logger.debug("Got URLs for {} unique domains".format(len(domain_sets)))
+            # 2. Group URL domains in sets
+            domain_sets = dict()
+            for url in candidate_set:
+                domain = self._get_domain_from_url(url)
+                if domain not in domain_sets:
+                    domain_sets[domain] = set()
+                domain_sets[domain].add(url)
+            self.logger.debug("Got URLs for {} unique domains".format(len(domain_sets)))
 
-        # 3. Round-robin among domain sets popping urls from them
-        balanced_urls = self._rr_domains(domain_sets, min_qty=nb_urls_send)
+            # 3. Round-robin among domain sets popping urls from them
+            balanced_urls, is_enough = self._rr_domains(domain_sets, min_qty=nb_urls_send)
+
         self.logger.debug("Sending {} URLs to crawler".format(len(balanced_urls)))
-
-        # ==== BALANCING ALGORITHM END ====
-
-        # # OLD BALANCING ALGORITHM:
-        # domain_url_list = []
-        # domain_list = []
-
-        # for url in self.redis_conn.keys():
-        #     url = url.decode()
-        #     parsed_uri = urlparse(url)
-        #     domain_result = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
-
-        #     # Get the list for the domains and URLs
-        #     domain_url_list.append((domain_result, url))
-        #     domain_list.append(domain_result)
-
-        # # Sort them to make sure they are both in a same order
-        # domain_url_list.sort()
-        # domain_list.sort(key=lambda x: x[0])
-
-        # # Count the number of domains
-        # domain_count = Counter(domain_list)
-        # self.logger.debug("There are {} different domains.".format(len(domain_count.keys())))
-
-        # # Get some URLs from each domain
-        # return_key_list = []
-        # for i in range(len(domain_count.keys())):
-        #     for _ in range(nb_urls_send):
-        #         one_random_key = domain_url_list[random.randint(0, len(domain_list)-1)]
-        #         return_key_list.append(one_random_key)
-        #         # Remove the key from redis after getting it (???)
-        #         self.redis_conn.delete(one_random_key[1])
-
-        # balanced_urls = []
-
-        # for i in range(len(return_key_list)):
-        #     balanced_urls.append(return_key_list[i][1])
-
-        # - - - - - - -
 
         return balanced_urls
 

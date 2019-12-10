@@ -68,14 +68,17 @@ class BingoProxy(object):
             'France', 'Hungary', 'Russia',
         ]
         self.proxy_list = []            # list of valid proxies
-        self._MIN_PROXY_THRESHOLD = 10  # min number of proxies to maintain
-        self._LOCAL_PROXY_CAP = 20      # cap for local executions (> _MIN_PROXY_THRESHOLD)
+        self._MIN_PROXY_THRESHOLD = 20  # min number of proxies to maintain
+        self._LOCAL_PROXY_CAP = 30      # cap for local executions (> _MIN_PROXY_THRESHOLD)
         self._NB_THREAD = concurrency   # number of concurrent connections
         self._CALL_TIMEOUT = timeout    # timeout for each request
         self._real_ip = None            # public IP address of this machine
 
         # setup logging
-        self._config_logging()
+        self.logger = self._config_logging()
+        self.DISABLE_PROXY_USAGE = os.getenv("DISABLE_PROXY_USAGE", False) == "True"
+        if self.DISABLE_PROXY_USAGE:
+            self.logger.warning("CAUTION :: PROXY DISABLED | Env var DISABLE_PROXY_USAGE is set to True")
 
         # define self._real_ip ip by making a request without proxy
         if test:
@@ -253,8 +256,7 @@ class BingoProxy(object):
         while True:
 
             try:
-                TEMP_DISABLED = False
-                if TEMP_DISABLED:
+                if self.DISABLE_PROXY_USAGE:
                     response = requests.get(url, timeout=self._CALL_TIMEOUT, verify=False)
                 else:
                     response = requests.get(url, proxies=proxy_protocols(proxy), timeout=self._CALL_TIMEOUT, verify=False)
@@ -322,9 +324,11 @@ class BingoProxy(object):
         stream.setLevel(LOG_LEVEL)
         stream.setFormatter(ColoredFormatter(FORMAT))
 
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(LOG_LEVEL)
-        self.logger.addHandler(stream)
+        logger = logging.getLogger(__name__)
+        logger.setLevel(LOG_LEVEL)
+        logger.addHandler(stream)
+
+        return logger
 
 
 # ===============
