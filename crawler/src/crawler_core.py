@@ -10,6 +10,7 @@ import requests
 import logging
 import hashlib
 import socket
+import string
 import pprint
 import struct
 import boto3
@@ -127,11 +128,13 @@ class Crawler(object):
 
             # store to S3 bucket if in AWS
             if os.environ.get("ENABLE_S3_STORAGE") == "True":
+                printable = set(string.printable)
+                url_clean = ''.join(filter(lambda x: x in printable, url))
                 url_hash = hashlib.sha1(url.encode()).hexdigest()
                 self._store_in_s3(os.getenv("S3_BUCKET_NAME"),
                                   file_name=url_hash,
                                   data=soup.prettify().encode('utf-8'),
-                                  url=url)
+                                  url=url_clean)
 
             meta = self._make_dict(response.status_code)
             return soup, meta
