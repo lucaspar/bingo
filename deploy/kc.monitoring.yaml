@@ -142,8 +142,10 @@ spec:
           claimName: grafana-claim
       containers:
       - name: grafana
-        image: pharosproduction/grafana:6
+        image: grafana/grafana:5.0.0
         imagePullPolicy: IfNotPresent
+        # securityContext:
+        #   fsGroup: 472
         ports:
         - containerPort: 3000
         resources:

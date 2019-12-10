@@ -13,7 +13,7 @@ build:
 profiles:
   - name: aws
     activation:
-      - kubeContext: aws
+      - kubeContext: "!*.eksctl.io"
     deploy:
       kubectl:
         manifests:

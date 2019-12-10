@@ -6,14 +6,19 @@ apiVersion: v1
 kind: Service
 metadata:
   name: crawling-service
+  labels:
+    app: bingo
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path:   /metrics
+    prometheus.io/port:   '9090'
 spec:
   selector:
     service: crawling-service
   ports:
-    - name: crawling-port
-      protocol: TCP
-      port: 8080
-      targetPort: 8080
+  - protocol: TCP
+    port: 9090
+    targetPort: crawling
 ---
 # Balancing service
 apiVersion: v1
@@ -95,6 +100,8 @@ spec:
   - name: domain-balancer
     image: bingocrawler/balancer:latest
     args: ["$(ENV_FILE)"]
+    ports:
+    - containerPort: 9090
     env:
     - name: ENV_FILE
       valueFrom:
@@ -125,6 +132,10 @@ spec:
       labels:
         app: bingo
         service: crawling-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
     spec:
       affinity:
         podAffinity:

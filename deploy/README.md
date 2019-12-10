@@ -46,12 +46,6 @@ kubectl config current-context
 aws eks update-kubeconfig --name $CLUSTER_NAME
 ```
 
-#### Deploy with Skaffold
-
-```sh
-skaffold dev
-```
-
 ### Create reusable resources
 
 ```sh
@@ -60,6 +54,12 @@ code AWS_ACCESS_KEY_ID.txt && code AWS_SECRET_ACCESS_KEY.txt
 
 # create secrets and configmaps
 ./create_resources.sh
+```
+
+### Deploy with Skaffold
+
+```sh
+skaffold dev
 ```
 
 ---

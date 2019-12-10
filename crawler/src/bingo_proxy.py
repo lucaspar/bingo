@@ -40,6 +40,9 @@ class BingoProxy(object):
             test:           if True, tests proxy list on initialization
         """
 
+        # start up the server to expose the metrics collected
+        prom.start_http_server(9090)
+
         # set parameters
         self._PROXY_SOURCES = [                 # websites with proxy lists
             'https://www.sslproxies.org/',

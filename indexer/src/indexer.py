@@ -13,9 +13,9 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from pymongo import MongoClient
 import prometheus_client as prom
-from collections import defaultdict, abc
 from colorlog import ColoredFormatter
 from nltk.stem import WordNetLemmatizer
+from collections import defaultdict, abc
 from nltk.corpus import stopwords, wordnet
 from nltk.tokenize import sent_tokenize, word_tokenize
 
@@ -305,7 +305,7 @@ if __name__ == '__main__':
     load_dotenv(dotenv_path=dotenv_path)
     logger = config_logging()
 
-    # start up the server to expose the metrics.
+    # start up the server to expose the metrics
     prom.start_http_server(9090)
 
     # run indexer
