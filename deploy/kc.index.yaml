@@ -1,0 +1,167 @@
+# ========
+# Services
+# ========
+# indexing service
+apiVersion: v1
+kind: Service
+metadata:
+  name: indexing-service
+  labels:
+    app: bingo
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path:   /metrics
+    prometheus.io/port:   '9090'
+spec:
+  selector:
+    service: indexing-service
+  ports:
+  - protocol: TCP
+    port: 9090
+    targetPort: indexing
+---
+# inverted-index-service
+apiVersion: v1
+kind: Service
+metadata:
+  name: inverted-index-service
+  labels:
+    app: bingo
+spec:
+  selector:
+    service: inverted-index-service
+  ports:
+    - protocol: TCP
+      port: 27017
+      targetPort: inverted-index
+---
+# mongodb service
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  labels:
+    app: bingo
+spec:
+  ports:
+  - name: inverted-index
+    port: 27017
+  clusterIP: None
+  selector:
+    role: mongo
+---
+# ====
+# Pods
+# ====
+# inverted index (mongodb) statefulset
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo
+  labels:
+    app: bingo
+    service: inverted-index-service
+spec:
+  serviceName: "mongo"
+  selector:
+    matchLabels:
+      app: bingo
+      service: inverted-index-service
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: bingo
+        service: inverted-index-service
+        role: mongo
+        environment: test
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: mongo
+        image: mongo
+        command:
+          - mongod
+          # - "--replSet"
+          # - rs0
+          # - "--smallfiles"
+          # - "--noprealloc"
+        ports:
+        - containerPort: 27017
+        volumeMounts:
+        - name: mongo-pvc
+          mountPath: /data/db
+      - name: mongo-sidecar
+        image: cvallance/mongo-k8s-sidecar
+        env:
+        - name: MONGO_SIDECAR_POD_LABELS
+          value: "role=mongo,environment=test"
+  volumeClaimTemplates:
+  - metadata:
+      name: mongo-pvc
+    spec:
+      storageClassName: sc-local-invidx
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 2Gi
+---
+# ======================
+# Deployments / replicas
+# ======================
+
+# INDEXER
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: indexer-pod
+spec:
+  selector:
+    matchLabels:
+      app: bingo
+      service: indexing-service
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: bingo
+        service: indexing-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 90
+            podAffinityTerm:
+              topologyKey: "kubernetes.io/hostname"
+              labelSelector:
+                matchExpressions:
+                - key: service
+                  operator: NotIn
+                  values:
+                  - crawling-service
+      containers:
+      - name: indexer-container
+        image: bingocrawler/indexer:latest
+        args: ["$(ENV_FILE)"]
+        ports:
+        - containerPort: 9090
+        env:
+        - name: ENV_FILE
+          valueFrom:
+            secretKeyRef:
+              name: deploy
+              key: ENV_FILE
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: aws-creds
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: aws-creds
+              key: AWS_SECRET_ACCESS_KEY

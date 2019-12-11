@@ -1,10 +1,6 @@
 FROM bingocrawler/core:latest AS bingocore
 
-# lxml requirement
-RUN apk add py3-lxml
-# RUN pip3 install lxml
-
-# required files for build
+# required files
 COPY src/poetry.lock src/pyproject.toml /bingo/
 
 # project requirements
@@ -17,5 +13,7 @@ RUN poetry install --no-interaction
 COPY src /bingo/bin
 COPY .env.aws .env.local /bingo/bin/
 
+EXPOSE 23456
+
 # execute
-ENTRYPOINT ["python", "/bingo/bin/crawler_core.py"]
+ENTRYPOINT ["python", "/bingo/bin/domain_balancer.py"]

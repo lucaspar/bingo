@@ -1,299 +1,326 @@
-# Creat the indexers that can read the files from a shared volume
-# and update the inverted index entries.
-# Author: Jin Huang
-# Initial version date: 11/07/2019
-
-# Import necessary libraries
-from dotenv import load_dotenv
-from bs4 import BeautifulSoup
-import boto3
+#!/usr/bin/env python
 import re
 import os
-from nltk.tokenize import word_tokenize
-from nltk.stem.snowball import SnowballStemmer
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
-import random
-from pymongo import MongoClient
-from collections import defaultdict
-from nltk.corpus import wordnet
-import nltk
 import sys
+import nltk
+import time
+import boto3
+import pprint
+import random
+import logging
+import traceback
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+from pymongo import MongoClient
+import prometheus_client as prom
+from colorlog import ColoredFormatter
+from nltk.stem import WordNetLemmatizer
+from collections import defaultdict, abc
+from nltk.corpus import stopwords, wordnet
 from nltk.tokenize import sent_tokenize, word_tokenize
-from nltk.stem import PorterStemmer
-from nltk.stem import LancasterStemmer
+
+# download NLTK dependencies
+nltk_deps = ['punkt', 'stopwords', 'wordnet', 'averaged_perceptron_tagger']
+for d in nltk_deps:
+    nltk.download(d)
+
+# setup metrics
+prom_processed_files = prom.Counter(
+    name='bingo_indexer_processed_files_total',
+    documentation='Total number of indexed HTML documents',
+    labelnames=['doc', 'url']
+)
+
+
+def config_logging():
+    """Configure logging format and handler."""
+
+    FORMAT = os.environ.get(
+        "LOGGING_FORMAT",
+        '%(log_color)s[%(asctime)s] %(module)-12s %(funcName)s(): %(message)s %(reset)s'
+    )
+
+    LOG_LEVEL = logging.DEBUG
+    stream = logging.StreamHandler()
+    stream.setLevel(LOG_LEVEL)
+    stream.setFormatter(ColoredFormatter(FORMAT))
+
+    logger = logging.getLogger(__name__)
+    logger.setLevel(LOG_LEVEL)
+    logger.addHandler(stream)
+
+    return logger
 
 
 class indexer(object):
+
     def __init__(self):
-        # Load env variables
-        load_dotenv(dotenv_path='../.env')
 
+        # setup logging and get env variables
+        self.logger = logging.getLogger(__name__)
         self.BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
-        self.AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
-        self.AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-        self.CONCURRENCY = int(os.getenv("CR_REQUESTS_CONCURRENCY"))
-        self.TIME_OUT = int(os.getenv("CR_REQUESTS_TIMEOUT"))
+        self.II_DB_HOST = os.environ.get('INVERTED_INDEX_HOST', 'localhost')
+        self.II_DB_NAME = os.environ.get('INVERTED_INDEX_NAME', 'inverted_index')
+        self.II_DB_PORT = int(os.environ.get('INVERTED_INDEX_PORT', 27017))
 
-        self.s3 = boto3.resource('s3')
+        # other params
+        self.LOCK_TTL = 3                       # TTL for indexing lock for S3 objects
+        self.processing_batch_size = 5          # number of objects for processing batch
+        self.s3_client = boto3.client('s3')
+        self.s3_resource = boto3.resource('s3')
+        self.bucket = self.s3_resource.Bucket(self.BUCKET_NAME)
 
-        # Set other parameters
-        self.debug = False
-        self.nb_test_doc = 3
-        self.len_limit = 2
-        self.nb_file_fetch = 5
-
-        # MongoDB set up
-        self.mongo_host = 'localhost'
-        self.mongo_port = 27017
-        self.db_name = 'inverted_index'
+        # establish connection
+        self.ii_client, self.ii_db = self._create_ii_conn()
 
 
-    def fetch_s3_obj(self):
+    def run(self, daemon=True):
+        """Run autonomously.
+        Args:
+            daemon: if True, keeps processing multiple batches.
+        """
+        while True:
+
+            s3_objects = self._fetch_s3_obj()           # fetch
+            doc_words = self._process_text(s3_objects)  # process
+            ii = self._create_inverted_index(doc_words) # index
+            # self._update_inverted_index(ii)             # store
+
+            if not daemon:
+                break
+
+    def _acquire_object_lock(self, key):
+        """Attempts to lock S3 object for indexer."""
+
+        obj_head = self.s3_client.head_object(Bucket=self.BUCKET_NAME, Key=key)
+        metadata = obj_head["Metadata"]
+
+        # lock object
+        if 'indexing_lock' not in metadata or \
+            float(metadata['indexing_lock']) + self.LOCK_TTL < time.time():
+
+            metadata["indexing_lock"] = str(time.time())
+            self.s3_client.copy_object(
+                Bucket=self.BUCKET_NAME,
+                Key=key,
+                Metadata=metadata,
+                MetadataDirective='REPLACE',
+                CopySource=self.BUCKET_NAME + '/' + key,
+            )
+
+            return True
+
+        return False
+
+
+    def _fetch_s3_obj(self):
         """
         Get the documents from S3.
-
-        :return: A list for all the keys of the documents in S3.
+        Returns:
+            List of document keys in S3.
         """
 
-        bucket = self.s3.Bucket(self.BUCKET_NAME)
-        print("[INFO] Connected to our bucket!")
+        file_key_list = list()
 
-        file_key_list = []
+        # get object keys to fetch
+        for obj_summary in self.bucket.objects.all():
+            if self._acquire_object_lock(obj_summary.key):
+                file_key_list.append(obj_summary.key)
+                if len(file_key_list) >= self.processing_batch_size:
+                    break
 
-        # Check the number of files in the S3
-        # TODO: How to prevent more than one indexer to
-        #  fetch the list at the same time.
-        for bucket_object in bucket.objects.all():
-            file_key_list.append(bucket_object.key)
+        # no objects available, just wait a while
+        if len(file_key_list) == 0:
+            sleep_time = self.LOCK_TTL / 4
+            self.logger.warning("There are no documents in S3. Sleeping for {}s...".format(sleep_time))
+            time.sleep(sleep_time)
 
-        print("There are totally %d files on S3." % len(file_key_list))
-
-        # TODO: How to decide the number of files we should fetch??
-        if (len(file_key_list)) >= self.nb_file_fetch:
-            file_key_list_return = file_key_list[0:self.nb_file_fetch]
-            return file_key_list_return
-
-        elif (len(file_key_list) <= self.nb_file_fetch) and (len(file_key_list) > 0):
-            file_key_list_return = file_key_list[0]
-            return file_key_list_return
-
+        # objects available
         else:
-            print("There is no document in S3...")
+            self.logger.debug("Processing {} objects from S3.".format(len(file_key_list)))
+
+        return file_key_list
 
 
-
-    def load_s3_doc(self, file_key):
+    def _load_s3_html(self, file_key):
         """
-        Load the document from S3
-
-        :return: The opened file.
+        Loads HTML file from S3 to memory.
+        Args:
+            file_key: file identifier in storage.
+        Returns:
+            The decoded file contents.
         """
+        s3_obj = self.s3_resource.Object(self.BUCKET_NAME, file_key)
+        url = s3_obj.metadata['url'] if 'url' in s3_obj.metadata else ''
+        htmldoc = s3_obj.get()['Body'].read().decode('utf-8')
 
-        s3_obj = self.s3.Object(self.BUCKET_NAME, file_key)
-
-        return s3_obj.get()['Body'].read().decode('utf-8')
-
-    def remove_s3_doc(self, file_key):
-        """
-
-        :param file_key:
-        :return: NA
-        """
-        # bucket = self.s3.Bucket(self.BUCKET_NAME)
-        # bucket.delete_key()
-        return self.s3.Object(self.BUCKET_NAME, file_key).delete()
+        return url, htmldoc
 
 
+    def _remove_s3_object(self, file_key):
+        """Deletes object from S3."""
+        return self.s3_resource.Object(self.BUCKET_NAME, file_key).delete()
 
 
-    def build_mongo_connection(self):
+    def _create_ii_conn(self):
         """
         Set up connection with MongoDB.
-
-        :return: The setup client and DB from MongoDB
+        Returns:
+            The setup client and DB from MongoDB
         """
-        print("[INFO] Setting up connection of MongoDB.")
-
-        client = MongoClient(self.mongo_host, self.mongo_port)
-        db = client[self.db_name]
+        client = MongoClient(self.II_DB_HOST, self.II_DB_PORT)
+        db = client[self.II_DB_NAME]
+        self.logger.info("Connected to Inverted Index DB!")
 
         return client, db
 
 
-    def get_wordnet_pos(self, word):
-        """
-        Map POS tag to first character lemmatize() accepts
-
-        """
-        # if self.debug:
-        #     print(word)
+    def _get_wordnet_pos(self, word):
+        """Maps POS tag to first character lemmatize() accepts."""
         tag = nltk.pos_tag([word])[0][1][0].upper()
-
         tag_dict = {"J": wordnet.ADJ,
                     "N": wordnet.NOUN,
                     "V": wordnet.VERB,
                     "R": wordnet.ADV}
 
-        # print(tag_dict.get(tag, wordnet.NOUN))
-
         return tag_dict.get(tag, wordnet.NOUN)
 
-    def stem_sen(self, sentence):
+
+    def _process_text(self, s3_key_list):
+        """
+        Args:
+            s3_key_list: The keys from S3 bucket.
+        Returns:
+            processed text/word list
         """
 
+        punctuations = ")?:!.,;(;,'#$%&1234567890-=^~@+*[]\{\}<>/_"
+        doc_tokens = dict()
+
+        for file_key in s3_key_list:
+
+            file_words = []
+            url, doc = self._load_s3_html(file_key=file_key)
+
+            document = BeautifulSoup(doc, features="html.parser").findAll(text=True)
+            text = ''
+            blacklist = [
+                '[document]', 'noscript', 'header', 'html',
+                'meta', 'head', 'input', 'script', 'style',
+            ]
+
+            for t in document:
+                if t.parent.name not in blacklist:
+                    t = t.strip()
+                    if len(t) > 0:
+                        text += t + ' '
+
+            doc_sentences = nltk.sent_tokenize(text)
+
+            # stemming & lemmatizing
+            wordnet_lem = WordNetLemmatizer()
+            for sentence in doc_sentences:
+
+                sentence = sentence.rstrip()                    # trimming
+                sentence = re.sub('[\W_]+', ' ', sentence)      # removing unknown characters
+                sentence_words = nltk.word_tokenize(sentence)   # tokenizing
+
+                # removing stopwords
+                swords = stopwords.words('english')
+                best_words = [ w for w in sentence_words if w not in swords ]
+
+                # lemmatizing
+                for idx, word in enumerate(best_words):
+                    pos = self._get_wordnet_pos(word)
+                    best_words[idx] = wordnet_lem.lemmatize(word, pos=pos)
+
+                file_words += best_words
+
+            doc_tokens[url] = file_words
+
+            # remove file from S3
+            # self._remove_s3_object(file_key=file_key)
+            # self.logger.debug("Processed doc removed from storage: {}".format(url))
+            label_dict = { 'doc': file_key, 'url': url }
+            prom_processed_files.labels(**label_dict).inc()
+
+
+        return doc_tokens
+
+
+    def _create_inverted_index(self, doc_words):
         """
-        token_words = word_tokenize(sentence)
-        stem_sentence = []
-
-        for word in token_words:
-            stem_sentence.append(porter.stem(word))
-            stem_sentence.append(" ")
-
-
-        return "".join(stem_sentence)
-
-
-
-    def text_processing(self, s3_key_list):
+        Create inverted index for a set of processed documents.
+        Args:
+            doc_words: tokens grouped by document.
+        Returns:
+            inverted index
         """
-        s3_key_list: The keys from S3 bucket.
+        # creates default structure
+        dd = lambda: defaultdict(lambda: 0)
+        inverted_index = defaultdict(dd)
 
-        :return: processed text/word list
-        """
+        # populate inverted index
+        for doc, tokens in doc_words.items():
+            for tk in tokens:
+                inverted_index[tk][doc] += 1
 
-        result_list = []
+        self.logger.info("Inverted index length: {}".format(len(inverted_index)))
 
-        for file_key in (s3_key_list):
-            one_file_word_list = []
-
-            print("*"*50)
-            print("[INFO] Processing one file...")
-
-            file = self.load_s3_doc(file_key=file_key)
-            # print(file) # Confirmed
-
-            """
-            Text processing:
-                done, but not perfect - Stemming & Lemmartize
-                done, but not perfect - Lower case, remove numbers and diacritics;
-                done - Remove punctuation and whitespaces
-                done - Tokenization
-            """
-
-            document = BeautifulSoup(file, features="html.parser").get_text()
-            doc_sentences = nltk.sent_tokenize(document)
-            print("Number of the sentences: %d" % len(doc_sentences))
-
-            # Stemming & Lemmartizer for each sentence
-            wordnet_lemmatizer = WordNetLemmatizer()
-            punctuations = ")?:!.,;(;,'#$%&1234567890-=^~@+*[]{}<>/_"
-
-            for one_sentence in doc_sentences[5:10]:
-                one_sentence = one_sentence.rstrip()
-                sentence_words = nltk.word_tokenize(one_sentence)
-                # sentence_words = self.stem_sen(sentence_words)
-
-                for word in sentence_words:
-                    # All lower case
-                    word = word.lower()
-                    word = ''.join([i for i in word if not i.isdigit()])
-
-                    # Remove punctuation
-                    if word:
-                        if word in punctuations:
-                            try:
-                                sentence_words.remove(word)
-                            except ValueError:
-                                continue
-
-                # Remove the stop words
-                filtered_list = [word for word in sentence_words if word not in stopwords.words('english')]
-
-                if self.debug:
-                    print("Number of words in original sentence: %d" % len(sentence_words))
-                    print("Number of words after removing stop words: %d" % len(filtered_list))
-
-                # Lemmarization
-                for (i, word) in enumerate(filtered_list):
-                    sentence_words[i] = wordnet_lemmatizer.lemmatize(word, pos=self.get_wordnet_pos(word))
-
-                for word in sentence_words:
-                    one_file_word_list.append(word)
-
-            # Remove the duplication
-            new_list = list(set(one_file_word_list))
-            result_list.append(new_list)
-
-            # Remove processed file from S3
-            self.remove_s3_doc(file_key=file_key)
-            print("File removed:" + file_key)
+        return inverted_index
 
 
-        return result_list
+    def _update(self, d, u):
+        for k, v in u.items():
+            if isinstance(v, abc.Mapping):
+                d[k] = self._update(self, d.get(k, {}), v)
+            else:
+                d[k] = v
+        return d
 
 
-    def create_inverted_index(self, text):
-        """
-        Create inverted index for the processed text.
+    def _update_inverted_index(self, inverted_index):
+        """Save inverted index into MongoDB."""
+        self.logger.info("Updating inverted index...")
+        index = self.ii_db.index
+        while True:
+            try:
+                current_ii = index.find_one({})
+                self.logger.info(type(current_ii))
+                self.logger.info(current_ii.keys())
+                if len(current_ii) == 0:
+                    current_ii = dict()
+                current_ii = self._update(current_ii, inverted_index)
 
-        :return: inverted index
-        """
-        index = defaultdict(list)
-
-        for i, tokens in enumerate(text):
-            for token in tokens:
-                index[token].append(i)
-
-        if self.debug:
-            print(index)
-
-        return index
-
-
-    def save_to_mongo(self, database, data):
-        """
-        Save inverted index into MongoDB.
-
-        :return: N/A
-        """
-        posts = database.posts
-
-        try:
-            result = posts.insert_one(data)
-            print('One post: {0}'.format(result.inserted_id))
-
-        except:
-            pass
+                result = index.update_one({}, current_ii, upsert=True)
+                self.logger.debug('One post: {}'.format(result.inserted_id))
+                break
+            except Exception as err:
+                self.logger.error('Error updating inverted index: {}'.format(err))
+                time.sleep(30)
+                continue
 
 
-
-
-###############################################
-# Main function
-###############################################
 if __name__ == '__main__':
-    bingo_indexer = indexer()
 
-    print("[INFO] Getting key list from S3...")
-    s3_doc_key_list = bingo_indexer.fetch_s3_obj()
-    # print(s3_doc_key_list) # Confirmed
+    # load dotenv
+    dotenv_path = sys.argv[1] if len(sys.argv) > 1 else '.env'
+    load_dotenv(dotenv_path=dotenv_path)
+    logger = config_logging()
 
-    print("[INFO] Start text processing")
-    result_list = bingo_indexer.text_processing(s3_key_list=s3_doc_key_list)
-
-    print("[INFO] Creating inverted index")
-    index = bingo_indexer.create_inverted_index(text=result_list)
-
-    print("[INFO] Creating MongoDB.")
-    mongo_client, mongo_db = bingo_indexer.build_mongo_connection()
-
-    print("[INFO] Saving inverted index into MongoDB.")
-    bingo_indexer.save_to_mongo(database=mongo_db, data=index)
-
-    # Retrieve the data for debugging
-    if bingo_indexer.debug:
+    # start up the server to expose the metrics
+    try:
+        prom.start_http_server(9090)
+    except:
+        # it was probably already started
         pass
 
-
-
+    # run indexer
+    while True:
+        try:
+            bingo_indexer = indexer()
+            bingo_indexer.run()
+        except Exception as err:
+            logger.critical('RIP Indexer: {}'.format(traceback.format_exc()))
+            time.sleep(5)
+            continue

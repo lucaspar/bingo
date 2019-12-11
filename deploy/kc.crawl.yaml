@@ -1,0 +1,171 @@
+# ========
+# SERVICES
+# ========
+# Crawling service
+apiVersion: v1
+kind: Service
+metadata:
+  name: crawling-service
+  labels:
+    app: bingo
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path:   /metrics
+    prometheus.io/port:   '9090'
+spec:
+  selector:
+    service: crawling-service
+  ports:
+  - protocol: TCP
+    port: 9090
+    targetPort: crawling
+---
+# Balancing service
+apiVersion: v1
+kind: Service
+metadata:
+  name: balancing-service
+spec:
+  selector:
+    service: balancing-service
+  ports:
+    - name: balancing-port
+      protocol: TCP
+      # Inside the cluster, what port does the service expose?
+      port: 9999
+      # Which port do pods selected by this service expose?
+      targetPort: 9999
+---
+# URL Map service
+apiVersion: v1
+kind: Service
+metadata:
+  name: urlmap-service
+spec:
+  selector:
+    service: urlmap-service
+  ports:
+    - name: urlmap-port
+      protocol: TCP
+      port: 6379
+      targetPort: 6379
+---
+# ====
+# PODS
+# ====
+# URL Map (Redis) pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: urlmap-pod
+  labels:
+    app: bingo
+    service: urlmap-service
+spec:
+  volumes:
+    - name: urlmap-storage
+      persistentVolumeClaim:
+        claimName: pvc-urlmap
+    - name: redisconfig
+      configMap:
+        name: redisconfig
+  containers:
+  - name: urlmap
+    image: redis:latest
+    args:
+      - /etc/redis/redis.conf
+    volumeMounts:
+    - name: urlmap-storage
+      mountPath: /data
+      subPath: urlmap
+    - name: redisconfig
+      mountPath: /etc/redis
+    ports:
+    - containerPort: 6379
+      name: urlmap-port
+      protocol: TCP
+---
+# Domain Balancer
+apiVersion: v1
+kind: Pod
+metadata:
+  name: domain-balancer-pod
+  labels:
+    app: bingo
+    service: balancing-service
+spec:
+  hostname: balancer-host
+  subdomain: default
+  containers:
+  - name: domain-balancer
+    image: bingocrawler/balancer:latest
+    args: ["$(ENV_FILE)"]
+    ports:
+    - containerPort: 9090
+    env:
+    - name: ENV_FILE
+      valueFrom:
+        secretKeyRef:
+          name: deploy
+          key: ENV_FILE
+    ports:
+    - name: balancing-port
+      containerPort: 9999
+      protocol: TCP
+---
+# ======================
+# DEPLOYMENTS / REPLICAS
+# ======================
+# CRAWLER
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crawler-pod
+spec:
+  selector:
+    matchLabels:
+      app: bingo
+      service: crawling-service
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: bingo
+        service: crawling-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 90
+            podAffinityTerm:
+              topologyKey: "kubernetes.io/hostname"
+              labelSelector:
+                matchExpressions:
+                - key: service
+                  operator: NotIn
+                  values:
+                  - urlmap-service
+      containers:
+      - name: crawler-container
+        image: bingocrawler/crawler:latest
+        args: ["$(ENV_FILE)"]
+        env:
+        - name: ENV_FILE
+          valueFrom:
+            secretKeyRef:
+              name: deploy
+              key: ENV_FILE
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: aws-creds
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: aws-creds
+              key: AWS_SECRET_ACCESS_KEY

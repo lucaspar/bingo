@@ -1,0 +1,33 @@
+apiVersion: skaffold/v1
+kind: Config
+metadata:
+  name: deploy
+build:
+  artifacts:
+  - image: bingocrawler/balancer
+    context: ../balancer
+  - image: bingocrawler/crawler
+    context: ../crawler
+  - image: bingocrawler/indexer
+    context: ../indexer
+profiles:
+  - name: aws
+    activation:
+      - kubeContext: "!*.eksctl.io"
+    deploy:
+      kubectl:
+        manifests:
+        - kc.crawl.yaml
+        - kc.crawl.aws.yaml
+        - kc.index.yaml
+        - kc.index.aws.yaml
+  - name: minikube
+    activation:
+      - kubeContext: minikube
+    deploy:
+      kubectl:
+        manifests:
+        - kc.crawl.yaml
+        - kc.crawl.minikube.yaml
+        - kc.index.yaml
+        - kc.index.minikube.yaml

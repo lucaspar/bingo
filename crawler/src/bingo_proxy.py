@@ -1,35 +1,59 @@
-# Author: Jin Huang
-# Initial version date: 10/08/2019
-
-"""
-Useful proxy list websites
-    https://www.sslproxies.org/ (100 IPs all Https, tested)
-    http://spys.one/en/https-ssl-proxy/ (90 IPs which are https, NOT TESTED YET)
-    https://hidemy.name/en/proxy-list/?type=hs#list (Over 2000 https, NOT TESTED YET)
-    https://www.proxy-list.download/HTTPS (1500 https, NOT TESTED YET)
-
-"""
-
+#!/usr/bin/env python
 import os
 import time
 import random
+import logging
 import urllib3
 import requests
 import threading
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 from time import time as timer
+import prometheus_client as prom
 from fake_useragent import UserAgent
+from colorlog import ColoredFormatter
 from multiprocessing.pool import ThreadPool
-import os
 
 urllib3.disable_warnings()
+# prometheus counters for metrics
+prom_success_requests = prom.Counter(
+    name='bingo_crawler_requests_success_total',
+    documentation='Total number of successful HTML requests',
+    labelnames=['url', 'status_code', 'size']
+)
+prom_failed_requests = prom.Counter(
+    name='bingo_crawler_requests_failed_total',
+    documentation='Total number of failed HTML requests',
+    labelnames=['url', 'reason']
+)
+
 
 class BingoProxy(object):
 
-    def __init__(self, concurrency=4, timeout=8):
+    def __init__(self, concurrency=4, timeout=8, test=True):
+        """
+        Initialize proxy module.
+
+        Args:
+            concurrency:    number of maximum parallel requests
+            timeout:        timeout for requests
+            test:           if True, tests proxy list on initialization
+        """
+
+        # start up the server to expose the metrics collected
+        try:
+            prom.start_http_server(9090)
+        except:
+            # it was probably already started
+            pass
 
         # set parameters
-        self._PROXY_WEBSITES = ['https://www.sslproxies.org/']  # websites with proxy lists
+        self._PROXY_SOURCES = [                 # websites with proxy lists
+            'https://www.sslproxies.org/',
+            # 'http://spys.one/en/https-ssl-proxy/',
+            # 'https://hidemy.name/en/proxy-list/?type=hs',
+            # 'https://www.proxy-list.download/HTTPS',
+        ]
         self._IP_TEST_URLS = [                                  # urls to probe ip addresses
             'https://ident.me/',
             'http://icanhazip.com',
@@ -47,16 +71,25 @@ class BingoProxy(object):
             'Spain', 'France', 'Iceland', 'Poland', 'Ukraine',
             'France', 'Hungary', 'Russia',
         ]
-        self._NB_THREAD = concurrency
-        self._CALL_TIMEOUT = timeout
-        self.proxy_list = []
-        self._real_ip = None
+        self.proxy_list = []            # list of valid proxies
+        self._MIN_PROXY_THRESHOLD = 20  # min number of proxies to maintain
+        self._LOCAL_PROXY_CAP = 30      # cap for local executions (> _MIN_PROXY_THRESHOLD)
+        self._NB_THREAD = concurrency   # number of concurrent connections
+        self._CALL_TIMEOUT = timeout    # timeout for each request
+        self._real_ip = None            # public IP address of this machine
+
+        # setup logging
+        self.logger = self._config_logging()
+        self.DISABLE_PROXY_USAGE = os.getenv("DISABLE_PROXY_USAGE", False) == "True"
+        if self.DISABLE_PROXY_USAGE:
+            self.logger.warning("CAUTION :: PROXY DISABLED | Env var DISABLE_PROXY_USAGE is set to True")
 
         # define self._real_ip ip by making a request without proxy
-        self.test_and_remove()
+        if test:
+            self._test_and_remove()
 
         # fetch proxy ips
-        self._update_proxy_list()
+        self._update_plist()
 
 
     def request(self, url_list):
@@ -69,41 +102,86 @@ class BingoProxy(object):
         proxy_selection = random.choices(self.proxy_list, k=len(url_list))
         req_list = list(zip(url_list, proxy_selection))
 
-        # ============================================================
-        #       The code for Heisenberg's uncertainty principle
-        #
-        #   Please don't remove the print statements below, otherwise
-        #   the code will fail. In this case the variables must be
-        #   observed to have their state defined, as the quantum
-        #   physics states.
-        # ============================================================
-        for r in req_list:
-            for n in r:
-                print(n, end='\t\t')
-            print()
-        # ============================================================
-        #   wrapping the zip() call above into list() solves it, but
-        #   leaving the Heisemberg's uncertainty code is more fun
-        # ============================================================
-
         # make concurrent requests
         pool = ThreadPool(self._NB_THREAD)
-        results = pool.imap_unordered(self.make_proxy_request, req_list)
+        results = pool.imap_unordered(self._proxy_request, req_list)
 
         return results
 
 
-    def _update_proxy_list(self):
+    def _remove_proxy(self, proxy, reason=""):
         """
-        Updates local list of proxies from multiple public proxy services.
+        Removes a proxy from list.
 
-        :return:
+        Args:
+            proxy:  Proxy element to be removed
+            reason: Reason of removal (for logging)
+        """
+        try:
+            self.proxy_list.remove(proxy)
+            self.logger.info("{} proxy was removed: {}".format(proxy['ip'], reason))
+        except ValueError:
+            pass
+
+
+    def _test_and_remove(self, proxy=None, test_only=False):
+        """
+        Tests a specific proxy and updates proxy list on failure.
+
+        Args:
+            proxy:      The proxy dict to be tested with its IP and PORT
+            test_only:  If True, does not remove on proxy failure
+        Returns:
+            result:     True if the proxy works, False if it does not work
+        """
+        proxy_works = False
+
+        try:
+
+            # try to fetch test url and read result
+            ip_test_url = random.choice(self._IP_TEST_URLS)
+            response = self._proxy_request(ip_test_url,
+                                                proxy,
+                                                enforce_proxy=True)
+            response.raise_for_status()
+            my_ip = response.text.replace('\n', '')
+
+            # proxy used
+            if proxy is not None:
+
+                # if proxy was really used, these must be different:
+                proxy_works = my_ip != self._real_ip
+
+                # remove proxy
+                if not test_only and not proxy_works:
+                    self.logger.info("REAL_IP: {} : EXTERNAL_IP: {}".format(
+                        self._real_ip, my_ip))
+                    self._remove_proxy(proxy, reason="Exposed real IP")
+
+            # no proxy used: reset real ip
+            else:
+                self._real_ip = my_ip
+
+        # if request failed for any reason, proxy will be removed from list
+        except (requests.exceptions.HTTPError, Exception):
+            if not test_only:
+                self._remove_proxy(proxy, reason="HTTP Error")
+            proxy_works = False
+
+        return proxy_works
+
+
+    def _update_plist(self):
+        """
+        Updates local list of proxies from public proxy sources.
+
+        Returns:
             list: a list of available proxies
         """
 
-        for proxy_website in self._PROXY_WEBSITES:
+        for proxy_source in self._PROXY_SOURCES:
 
-            # set it up
+            # set up user agent
             proxies_no_filter = []
             user_agent = UserAgent()
             headers = {
@@ -112,17 +190,17 @@ class BingoProxy(object):
 
             # make requests
             try:
-                response = requests.get(proxy_website, headers=headers, timeout=self._CALL_TIMEOUT, verify=False)
+                response = requests.get(proxy_source, headers=headers, timeout=self._CALL_TIMEOUT, verify=False)
                 response.raise_for_status()
                 soup = BeautifulSoup(response.text, 'html.parser')
                 proxies_table = soup.find(id='proxylisttable')
 
             except:
-                print("Failed to get proxies from", proxy_website)
+                self.logger.warn("Failed to get proxies from {}".format(proxy_source))
                 continue
 
-            if (proxy_website == 'https://www.sslproxies.org/'):
-                # Find the proxies and feature in this website
+            if (proxy_source == 'https://www.sslproxies.org/'):
+                # get public servers from this source
                 for row in proxies_table.tbody.find_all('tr'):
                     proxies_no_filter.append(
                         {
@@ -133,49 +211,42 @@ class BingoProxy(object):
                         }
                     )
 
-            #TODO: Add other proxy websites as well as the conditions for them
-
-
-        # filter proxies that do not satisfy the conditions
+        # filter out proxies that do not satisfy the conditions
         for proxy_ip in proxies_no_filter:
             if  proxy_ip['country'] in self._COUNTRY_LIST   and \
                 proxy_ip['https']:
 
                 self.proxy_list.append(proxy_ip)
-
             else:
                 continue
 
-        # cap proxy list to 5 IPs for local testing
+        # cap proxy list to 15 IPs for local testing
         if os.getenv("ENVIRONMENT") == 'local':
-            self.proxy_list = random.choices(self.proxy_list, k=5)
+            self.logger.info("Local env: using only {} proxies.".format(self._LOCAL_PROXY_CAP))
+            self.proxy_list = random.choices(self.proxy_list, k=self._LOCAL_PROXY_CAP)
 
-        print("Total %d proxies found" % len(self.proxy_list))
+        self.logger.info("Updated proxy list: {} proxies available".format(len(self.proxy_list)))
         return self.proxy_list
 
 
-    def random_proxy(self):
-        """
-        :return: Random index for a proxy
-        """
-        return random.choice(range(len(self.proxy_list)))
-
-
-    def make_proxy_request(self, url, proxy=None, enforce_proxy=False):
+    def _proxy_request(self, url, proxy=None, enforce_proxy=False):
         """
         Makes an HTTP request using a proxy.
 
-        :param
+        Args:
             url:            The document to be requested.
             proxy:          The proxy to intermediate the request. On error, a random proxy is selected.
             enforce_proxy:  If False (default), it will retry using another proxy.
-        :return:
-            response object, including content and HTTP status code.
+        Returns:
+            response object, including content and HTTP status code, or None if unsuccessful.
         """
 
         # unpack first argument if necessary
         if isinstance(url, tuple):
-            url, proxy = url
+            if len(url) == 2:
+                url, proxy = url
+            elif len(url) == 3:
+                url, proxy, enforce_proxy = url
 
         # define proxy
         def proxy_protocols(proxy):
@@ -185,106 +256,127 @@ class BingoProxy(object):
             } if proxy else {}
 
         response = None
-        # make the request using the proxy
-        try:
-            # response = requests.get(url, proxies=proxy_protocols(proxy), timeout=self._CALL_TIMEOUT, verify=False)
-            response = requests.get(url, timeout=self._CALL_TIMEOUT, verify=False)
-        except requests.exceptions.ProxyError as e:
-            # retry with another proxy
-            if not enforce_proxy:
-                rp = random.choice(self.proxy_list)
-                response = requests.get(url, proxies=proxy_protocols(rp), timeout=self._CALL_TIMEOUT, verify=False)
-            else:
-                raise e
-        # or let parent function handle it
-        except Exception as e:
-            raise e
+        # try different proxies until it works
+        while True:
+
+            try:
+                if self.DISABLE_PROXY_USAGE:
+                    response = requests.get(url, timeout=self._CALL_TIMEOUT, verify=False)
+                else:
+                    response = requests.get(url, proxies=proxy_protocols(proxy), timeout=self._CALL_TIMEOUT, verify=False)
+                if response:
+                    self.logger.debug("Request succeeded: {}".format(url))
+                    label_dict = {
+                        'url': url,
+                        'status_code': response.status_code,
+                        'size': len(response.content),
+                    }
+                    prom_success_requests.labels(**label_dict).inc()
+                    break
+
+            except requests.exceptions.ProxyError as e:
+
+                # count failure to prometheus metrics
+                prom_failed_requests.labels(url=url, reason="proxy_failure").inc()
+
+                # proxy failed, remove from list
+                self._remove_proxy(proxy, reason="Proxy has failed")
+
+                # fetch more proxy servers if below threshold
+                if len(self.proxy_list) < self._MIN_PROXY_THRESHOLD:
+                    self._update_plist()
+
+                # if proxy is enforced, log and return None response
+                if enforce_proxy:
+                    self.logger.error("Proxy error: {}".format(str(e)))
+                    break
+                # else, retry with another random proxy
+                else:
+                    self.logger.info("{} proxy failed, retrying request...".format(proxy['ip']))
+                    proxy = random.choice(self.proxy_list)
+
+            except requests.exceptions.ConnectTimeout as e:
+                # count failure to prometheus metrics
+                prom_failed_requests.labels(url=url, reason="timeout").inc()
+                self.logger.warn("Request timeout. Retrying another proxy... \n{}".format(str(e)))
+
+            except Exception as e:
+                # count failure to prometheus metrics
+                prom_failed_requests.labels(url=url, reason="unknown").inc()
+                self.logger.warn("Unknown error: {}".format(str(e)))
 
         return response
 
 
-    def test_and_remove(self, proxy=None, test_only=False):
+    def _config_logging(self, demo=False):
         """
-        Tests a specific proxy and updates proxy list on failure.
+        Configure logging format and handler.
 
-        :param
-            proxy:      The proxy dict to be tested with its IP and PORT
-            test_only:  If True, does not remove on proxy failure
-        :return:
-            result: True if the proxy works, False if it does not work
+        Args:
+            demo: if True, logging demonstration is executed.
         """
-        proxy_works = False
 
-        # removes from object list
-        def remove_proxy(reason=""):
-            try:
-                print("\tRemoving", proxy['ip'], "Reason:", reason)
-                self.proxy_list.remove(proxy)
-            except ValueError:
-                pass
+        # get formatting string
+        FORMAT = os.environ.get(
+            "LOGGING_FORMAT",
+            '%(log_color)s[%(asctime)s] %(module)-12s %(funcName)s(): %(message)s %(reset)s'
+        )
 
-        try:
+        # set
+        LOG_LEVEL = logging.DEBUG
+        stream = logging.StreamHandler()
+        stream.setLevel(LOG_LEVEL)
+        stream.setFormatter(ColoredFormatter(FORMAT))
 
-            # try to fetch test url and read result
-            ip_test_url = random.choice(self._IP_TEST_URLS)
-            response = self.make_proxy_request(ip_test_url, proxy, enforce_proxy=True)
-            response.raise_for_status()
-            my_ip = response.text.replace('\n','')
+        logger = logging.getLogger(__name__)
+        logger.setLevel(LOG_LEVEL)
+        logger.addHandler(stream)
 
-            # proxy used
-            if proxy is not None:
-
-                # if proxy was really used, these must be different:
-                proxy_works = my_ip != self._real_ip
-                print("\tREAL_IP:", self._real_ip, 'EXTERNAL_IP:',  my_ip)
-
-                # remove proxy
-                if not test_only and not proxy_works:
-                    remove_proxy(reason="Exposed real IP")
-
-            # no proxy used: reset real ip
-            else:
-                self._real_ip = my_ip
-
-        # if request failed for any reason, proxy will be removed from list
-        except (requests.exceptions.HTTPError, Exception):
-            if not test_only:
-                remove_proxy(reason="HTTP Error")
-            proxy_works = False
-
-        return proxy_works
+        return logger
 
 
-# ========================
-#   USAGE EXAMPLE
-# ========================
+# ===============
+#  USAGE EXAMPLE
+# ===============
 if __name__ == '__main__':
 
     # load environment variables
-    from dotenv import load_dotenv
     load_dotenv(dotenv_path='../.env')
     concurrency = int(os.getenv("CR_REQUESTS_CONCURRENCY", default=1))
     timeout     = int(os.getenv("CR_REQUESTS_TIMEOUT", default=20))
     print("Concurrency", concurrency, "Timeout", timeout)
 
     # other variables
-    url_list    = ['https://en.wikipedia.org/wiki/Main_Page', 'https://www.yahoo.com/', 'https://cnn.com']
+    url_list = [
+        'https://en.wikipedia.org/wiki/Main_Page',
+        'https://www.youtube.com/',
+        'https://www.foxnews.com/',
+        'https://www.reddit.com/',
+        'https://www.github.com/',
+        'https://www.yahoo.com/',
+        'https://www.quora.com/',
+        'https://www.nd.edu/',
+        'https://cnn.com/',
+    ]
 
     # basic usage:
-    bp = BingoProxy(concurrency=concurrency, timeout=timeout)
+    bp = BingoProxy(concurrency=concurrency, timeout=timeout, test=False)
     responses = bp.request(url_list)
     for res in responses:
-        print("\t" + str(res.status_code), res.url, res.elapsed, sep='\t\t')
+        print("\t" + str(res.status_code), res.url, res.elapsed, sep='\t')
 
-    # testing proxies
-    works = []
-    print()
-    print(len(bp.proxy_list), "proxies before testing")
+    TESTING = False
+    if TESTING:
 
-    pl_copy = list(bp.proxy_list)
-    for idx, proxy in enumerate(pl_copy):
-        works.append(bp.test_and_remove(proxy))
+        # testing proxies
+        works = []
+        print()
+        print(len(bp.proxy_list), "proxies before testing")
 
-    print(len(bp.proxy_list), "proxies after testing\n\n----\n")
-    for p in bp.proxy_list:
-        print(p['ip'])
+        pl_copy = list(bp.proxy_list)
+        for idx, proxy in enumerate(pl_copy):
+            works.append(bp._test_and_remove(proxy))
+
+        print(len(bp.proxy_list), "proxies after testing\n\n----\n")
+        for p in bp.proxy_list:
+            print(p['ip'])
