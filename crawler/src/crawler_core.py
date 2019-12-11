@@ -222,9 +222,7 @@ class Crawler(object):
 
 
     def start(self):
-        '''
-        Starts crawling.
-        '''
+        '''Starts crawling.'''
         try:
 
             # crawler-balancer communication loop
@@ -248,21 +246,21 @@ class Crawler(object):
                     new_urls.update(set(self._extract_anchors(url, soup)))
 
                 # send the url metadata size and content
+                # url_meta['new_urls'] = list(new_urls)[:100]
                 url_meta['new_urls'] = list(new_urls)
                 data_for_balancer = json.dumps(url_meta)
-                self.logger.debug("Sending data to balancer: {}".format(pprint.pformat(data_for_balancer)))
+                self.logger.debug("Sending {} new URLs to balancer".format(len(url_meta['new_urls'])))
                 self.sock_balancer.sendall(struct.pack('>I', len(data_for_balancer)))
                 self.sock_balancer.sendall(data_for_balancer.encode())
 
         except:
             self.logger.critical(traceback.format_exc())
-            self._restart_connection()
+            # self._restart_connection()
+            exit(2)
 
 
     def _recv_balanced_urls(self):
-        '''
-        Receives URLs from Balancer.
-        '''
+        '''Receives URLs from Balancer.'''
 
         try:
 
@@ -275,13 +273,14 @@ class Crawler(object):
             # receive url metadata
             url_meta_recv = self.sock_balancer.recv(url_meta_recv_size)
             url_list = json.loads(url_meta_recv.decode())
-            self.logger.info('Received URLs from Balancer: {}'.format(pprint.pformat(url_list)))
+            self.logger.info('Received {} URLs from Balancer'.format(len(url_list)))
 
             return url_list
 
         except Exception:
             self.logger.critical(traceback.format_exc())
-            self._restart_connection()
+            # self._restart_connection()
+            exit(3)
 
 
     def _connect_to_balancer(self):
@@ -421,15 +420,14 @@ if __name__ == "__main__":
 
     # initialize crawler and recreate it if needed
     crawler = None
-    while True:
-        try:
-            crawler = Crawler()
-            crawler.start()
-        except KeyboardInterrupt:
-            if crawler:
-                crawler.logger.info("KEYBOARD INTERRUPT :: finishing gracefully.")
-                crawler.sock_balancer.close()
-            exit()
-        except:
-            crawler.logger.critical("RIP Crawler:\n\n{}".format(traceback.format_exc()))
-            continue
+    try:
+        crawler = Crawler()
+        crawler.start()
+    except KeyboardInterrupt:
+        if crawler:
+            crawler.logger.info("KEYBOARD INTERRUPT :: finishing gracefully.")
+            crawler.sock_balancer.close()
+        exit(0)
+    except:
+        crawler.logger.critical("RIP Crawler:\n\n{}".format(traceback.format_exc()))
+        exit(1)

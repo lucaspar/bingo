@@ -27,7 +27,7 @@ profiles:
     deploy:
       kubectl:
         manifests:
-        # - kc.crawl.yaml
-        # - kc.crawl.minikube.yaml
+        - kc.crawl.yaml
+        - kc.crawl.minikube.yaml
         - kc.index.yaml
         - kc.index.minikube.yaml

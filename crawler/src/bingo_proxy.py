@@ -41,7 +41,11 @@ class BingoProxy(object):
         """
 
         # start up the server to expose the metrics collected
-        prom.start_http_server(9090)
+        try:
+            prom.start_http_server(9090)
+        except:
+            # it was probably already started
+            pass
 
         # set parameters
         self._PROXY_SOURCES = [                 # websites with proxy lists

@@ -25,7 +25,7 @@ class DomainBalancer(object):
         self._config_logging()
 
         self.MIN_URLS_SEND = 1          # send this many urls per crawler at least
-        self.MAX_URLS_SEND = 20         # send this many urls per crawler at most
+        self.MAX_URLS_SEND = 5          # send this many urls per crawler at most
         self.EXPECTED_NB_CRAWLERS = 10  # expected number of crawlers (just as reference, not updated!!)
         while True:
             try:
@@ -282,7 +282,7 @@ class DomainBalancer(object):
                 while len(url_list) < 1:
 
                     url_list = self._get_balanced_urls()
-                    self.logger.debug("Balanced URLs:\n{}".format(pprint.pformat(url_list)))
+                    # self.logger.debug("Balanced URLs:\n{}".format(pprint.pformat(url_list)))
                     url_list = json.dumps(url_list).encode()
 
                 # send the size and the list to the crawler
@@ -293,23 +293,23 @@ class DomainBalancer(object):
                 # receive the size of incoming data
                 data_size = conn.recv(4)
                 data_size = struct.unpack('>I', data_size)[0]
-                self.logger.debug("Received size of {} from crawler".format(data_size))
+                self.logger.debug("Received size of {} bytes from crawler".format(data_size))
 
                 # receive the metadata
                 total_data = conn.recv(data_size)
                 str_metadata_decode = total_data.decode()
-                self.logger.debug("Received metadata: {}".format(str_metadata_decode))
+                self.logger.debug("Received metadata of size {} from crawler".format(len(str_metadata_decode)))
 
                 # process metadata and update URL Map
                 metadata = self._process_url_metadata(ast.literal_eval(str_metadata_decode))
                 self._release_locks(metadata)
-                self.logger.debug("Saving metadata to URL Map: {}".format(pprint.pformat(metadata)))
+                self.logger.debug("Saving metadata of size {} to URL Map.".format(len(metadata)))
                 self._update_url_map(conn=self.redis_conn, data=metadata)
 
             except:
                 self.logger.error(traceback.format_exc())
                 conn.close()
-                break
+                exit(1)
 
 
 if __name__ == '__main__':
@@ -340,8 +340,8 @@ if __name__ == '__main__':
             # stop incoming connections
             balancer.logger.info("KEYBOARD INTERRUPT :: finishing gracefully.")
             balancer.stop_listening()
-            exit()
+            exit(0)
 
         except:
             balancer.logger.critical("Fatal error in Balancer:\n\n{}".format(traceback.format_exc()))
-            break
+            exit(1)

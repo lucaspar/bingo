@@ -64,7 +64,7 @@ class indexer(object):
         self.II_DB_PORT = int(os.environ.get('INVERTED_INDEX_PORT', 27017))
 
         # other params
-        self.LOCK_TTL = 120                     # TTL for indexing lock for S3 objects
+        self.LOCK_TTL = 3                       # TTL for indexing lock for S3 objects
         self.processing_batch_size = 5          # number of objects for processing batch
         self.s3_client = boto3.client('s3')
         self.s3_resource = boto3.resource('s3')
@@ -240,7 +240,7 @@ class indexer(object):
 
             # remove file from S3
             # self._remove_s3_object(file_key=file_key)
-            self.logger.debug("Processed doc removed from storage: {}".format(url))
+            # self.logger.debug("Processed doc removed from storage: {}".format(url))
             label_dict = { 'doc': file_key, 'url': url }
             prom_processed_files.labels(**label_dict).inc()
 
@@ -309,7 +309,11 @@ if __name__ == '__main__':
     logger = config_logging()
 
     # start up the server to expose the metrics
-    prom.start_http_server(9090)
+    try:
+        prom.start_http_server(9090)
+    except:
+        # it was probably already started
+        pass
 
     # run indexer
     while True:
